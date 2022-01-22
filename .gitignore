@@ -1,3 +1,11 @@
+# Custom.
+.vscode/settings.json
+checkpoints/
+checkpoints_*/
+logs/
+logs_*/
+wandb/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
