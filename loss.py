@@ -14,7 +14,6 @@ class MyLosses():
         self.train_args = train_args
         self.logger = logger
         self.phase = phase
-        self.l1_lw = train_args.l1_lw
         self.l1_loss = torch.nn.L1Loss(reduction='mean')
 
     def my_l1_loss(self, rgb_output, rgb_target):
@@ -48,7 +47,7 @@ class MyLosses():
             cur_l1 = self.my_l1_loss(rgb_output, rgb_target)
             
             # Update lists.
-            if self.l1_lw > 0.0:
+            if self.train_args.l1_lw > 0.0:
                 loss_l1.append(cur_l1)
             
         # Sum & return losses + other informative metrics across batch size within this GPU.
@@ -56,9 +55,9 @@ class MyLosses():
         loss_l1 = torch.sum(torch.stack(loss_l1)) if len(loss_l1) else None
 
         # Return results.
-        result = dict()
-        result['l1'] = loss_l1
-        return result
+        loss_retval = dict()
+        loss_retval['l1'] = loss_l1
+        return loss_retval
 
     def entire_batch(self, data_retval, model_retval, loss_retval):
         '''
@@ -76,7 +75,7 @@ class MyLosses():
                 loss_retval[k] = torch.sum(v)
 
         # Obtain total loss. 
-        loss_total = loss_retval['l1'] * self.l1_lw
+        loss_total = loss_retval['l1'] * self.train_args.l1_lw
         
         # Convert loss terms (just not the total) to floats for logging.
         for (k, v) in loss_retval.items():

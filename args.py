@@ -47,7 +47,7 @@ def shared_args(parser):
                         help='Path to parent collection of checkpoint folders.')
     parser.add_argument('--log_root', default='logs/', type=str,
                         help='Path to parent collection of logs, visualizations, and results.')
-    parser.add_argument('--name', '--tag', default='v1', type=str,
+    parser.add_argument('--name', '--tag', default='tmp1', type=str,
                         help='Recognizable, unique tag of this experiment for bookkeeping. A good '
                         'practice would be to include a version number.')
     parser.add_argument('--resume', '--checkpoint_name', default='', type=str,
@@ -58,6 +58,8 @@ def shared_args(parser):
                         'otherwise pick latest.')
 
     # Automatically inferred options (do not assign).
+    parser.add_argument('--is_debug', default=False, type=_str2bool,
+                        help='Shorter epochs; log and visualize more often.')
     parser.add_argument('--checkpoint_path', default='', type=str,
                         help='Path to current checkpoint directory for this experiment.')
     parser.add_argument('--train_log_path', default='', type=str,
@@ -75,15 +77,21 @@ def train_args():
     # Training / misc options.
     parser.add_argument('--num_epochs', default=50, type=int,
                         help='Number of epochs to train for.')
-    parser.add_argument('--learn_rate', default=3e-4, type=float,
+    parser.add_argument('--checkpoint_interval', default=5, type=int,
+                        help='Store permanent model checkpoint every this number of epochs.')
+    parser.add_argument('--learn_rate', default=5e-4, type=float,
                         help='Initial learning rate.')
     parser.add_argument('--lr_decay', default=0.30, type=float,
                         help='Learning rate factor per step for scheduler.')
     parser.add_argument('--do_val_noaug', default=False, type=_str2bool,
                         help='If True, also perform validation phase with no data augmentation '
                         'after every epoch, in addition to val_aug.')
+    parser.add_argument('--val_every', default=1, type=int,
+                        help='Epoch interval for validation phase(s).')
     parser.add_argument('--gradient_clip', default=0.5, type=float,
                         help='If > 0, clip gradient L2 norm to this value for stability.')
+    parser.add_argument('--optimizer', default='adamw', type=str,
+                        help='Which optimizer to use for training (adam / adamw / lamb).')
 
     # Model options.
     parser.add_argument('--image_dim', default=224, type=int,
@@ -122,6 +130,8 @@ def test_args():
 def verify_args(args, is_train=False):
 
     assert args.device in ['cuda', 'cpu']
+
+    args.is_debug = args.name.startswith('d')
 
     if args.num_workers < 0:
         if is_train:

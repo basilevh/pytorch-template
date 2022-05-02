@@ -44,7 +44,7 @@ def load_networks(checkpoint_path, device, logger, epoch=-1):
     model_args = checkpoint['model_args']
     print_fn('My model args: ' + str(model_args))
 
-    # Instantiate network.
+    # Instantiate networks.
     my_model = model.MyModel(logger, **model_args)
     my_model = my_model.to(device)
     my_model.load_state_dict(checkpoint['my_model'])

@@ -1,0 +1,10 @@
+{
+    "python.analysis.extraPaths": [
+        "./data/",
+        "./eval/",
+        "./experimental/",
+        "./model/",
+        "./third_party/",
+        "./utils/",
+    ]
+}

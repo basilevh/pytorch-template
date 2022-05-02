@@ -19,6 +19,7 @@ import random
 import scipy
 import seaborn as sns
 import shutil
+import sys
 import time
 import torch
 import torch.nn
@@ -36,3 +37,9 @@ import warnings
 from einops import rearrange, repeat
 
 PROJECT_NAME = 'my-project-template'
+
+sys.path.append(os.getcwd())
+sys.path.append(os.path.join(os.getcwd(), 'data/'))
+sys.path.append(os.path.join(os.getcwd(), 'eval/'))
+sys.path.append(os.path.join(os.getcwd(), 'model/'))
+sys.path.append(os.path.join(os.getcwd(), 'utils/'))

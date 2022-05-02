@@ -56,9 +56,11 @@ class MyTrainPipeline(torch.nn.Module):
             loss_retval (dict): Preliminary loss information (per-example, but not batch-wide).
         '''
 
+        # Prepare data.
         rgb_input = data_retval['rgb_input']
         rgb_input = rgb_input.to(self.device)
 
+        # Run model.
         rgb_output = self.my_model(rgb_input)
 
         model_retval = dict()

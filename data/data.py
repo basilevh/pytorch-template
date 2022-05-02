@@ -94,7 +94,7 @@ def create_test_data_loader(train_args, test_args, train_dset_args, logger):
 
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=test_args.batch_size, num_workers=test_args.num_workers,
-        shuffle=True, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False)
+        shuffle=False, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False)
 
     return (test_loader, test_dset_args)
 

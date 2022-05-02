@@ -4,6 +4,9 @@ Training + validation oversight and recipe configuration.
 
 from __init__ import *
 
+# Library imports.
+import torch_optimizer
+
 # Internal imports.
 import args
 import data
@@ -47,24 +50,34 @@ def _train_one_epoch(args, train_pipeline, phase, epoch, optimizer,
 
         total_step = cur_step + total_step_base  # For continuity in wandb.
 
-        try:
-            # First, address every example independently.
-            # This part has zero interaction between any pair of GPUs.
+        if args.is_debug:
+            # Don't catch exceptions when debugging.
             (model_retval, loss_retval) = train_pipeline[0](data_retval, cur_step, total_step)
 
-            # Second, process accumulated information, for example contrastive loss functionality.
-            # This part typically happens on the first GPU, so it should be kept minimal in memory.
             loss_retval = train_pipeline[1].process_entire_batch(
                 data_retval, model_retval, loss_retval, cur_step, total_step)
             total_loss = loss_retval['total']
 
-        except Exception as e:
-            num_exceptions += 1
-            if num_exceptions >= 7:
-                raise e
-            else:
-                logger.exception(e)
-                continue
+        else:
+            try:
+                # First, address every example independently.
+                # This part has zero interaction between any pair of GPUs.
+                (model_retval, loss_retval) = train_pipeline[0](data_retval, cur_step, total_step)
+
+                # Second, process accumulated information, for example contrastive loss functionality.
+                # This part typically happens on the first GPU, so it should be kept minimal in memory.
+                loss_retval = train_pipeline[1].process_entire_batch(
+                    data_retval, model_retval, loss_retval, cur_step, total_step)
+                total_loss = loss_retval['total']
+
+            except Exception as e:
+
+                num_exceptions += 1
+                if num_exceptions >= 7:
+                    raise e
+                else:
+                    logger.exception(e)
+                    continue
 
         # Perform backpropagation to update model parameters.
         if phase == 'train':
@@ -80,10 +93,10 @@ def _train_one_epoch(args, train_pipeline, phase, epoch, optimizer,
 
         # Print and visualize stuff.
         logger.handle_train_step(epoch, phase, cur_step, total_step, steps_per_epoch,
-                           data_retval, model_retval, loss_retval)
+                           data_retval, model_retval, loss_retval, args)
 
         # DEBUG:
-        if cur_step >= 256 and 'dbg' in args.name:
+        if cur_step >= 200 and args.is_debug:
             logger.warning('Cutting epoch short for debugging...')
             break
 
@@ -106,16 +119,18 @@ def _train_all_epochs(args, train_pipeline, optimizer, lr_scheduler, start_epoch
         # Save model weights.
         checkpoint_fn(epoch)
 
-        # Validation with data augmentation.
-        _train_one_epoch(
-            args, train_pipeline, 'val_aug', epoch, optimizer,
-            lr_scheduler, val_aug_loader, device, logger)
+        if epoch % args.val_every == 0:
 
-        # Validation without data augmentation.
-        if args.do_val_noaug:
+            # Validation with data augmentation.
             _train_one_epoch(
-                args, train_pipeline, 'val_noaug', epoch, optimizer,
-                lr_scheduler, val_noaug_loader, device, logger)
+                args, train_pipeline, 'val_aug', epoch, optimizer,
+                lr_scheduler, val_aug_loader, device, logger)
+
+            # Validation without data augmentation.
+            if args.do_val_noaug:
+                _train_one_epoch(
+                    args, train_pipeline, 'val_noaug', epoch, optimizer,
+                    lr_scheduler, val_noaug_loader, device, logger)
 
         logger.epoch_finished(epoch)
 
@@ -170,7 +185,12 @@ def main(args, logger):
         train_pipeline = torch.nn.DataParallel(train_pipeline)
 
     # Instantiate optimizer & learning rate scheduler.
-    optimizer = torch.optim.Adam(train_pipeline.parameters(), lr=args.learn_rate)
+    if args.optimizer == 'adam':
+        optimizer = torch.optim.Adam(train_pipeline.parameters(), lr=args.learn_rate)
+    elif args.optimizer == 'adamw':
+        optimizer = torch.optim.AdamW(train_pipeline.parameters(), lr=args.learn_rate)
+    elif args.optimizer == 'lamb':
+        optimizer = torch_optimizer.Lamb(train_pipeline.parameters(), lr=args.learn_rate)
     milestones = [(args.num_epochs * 2) // 5,
                   (args.num_epochs * 3) // 5,
                   (args.num_epochs * 4) // 5]
@@ -203,16 +223,15 @@ def main(args, logger):
                 'model_args': model_args,
             }
             checkpoint['my_model'] = networks_nodp[0].state_dict()
-            torch.save(checkpoint,
-                       os.path.join(args.checkpoint_path, 'model_{}.pth'.format(epoch)))
+            if epoch % args.checkpoint_interval == 0:
+                torch.save(checkpoint,
+                        os.path.join(args.checkpoint_path, 'model_{}.pth'.format(epoch)))
             torch.save(checkpoint,
                        os.path.join(args.checkpoint_path, 'checkpoint.pth'))
             logger.info()
 
-    if 1:
-        # if 'dbg' not in args.name:
-        logger.init_wandb(PROJECT_NAME, args, networks, name=args.name,
-                          group='train_debug' if 'dbg' in args.name else 'train')
+    logger.init_wandb(PROJECT_NAME, args, networks, name=args.name,
+                        group='train_debug' if args.is_debug else 'train')
 
     # Print train arguments.
     logger.info('Final train command args: ' + str(args))
@@ -240,12 +259,19 @@ if __name__ == '__main__':
 
     logger = logvis.MyLogger(args, context='train')
 
-    try:
-
+    if args.is_debug:
+        
+        # Don't catch exceptions when debugging.
         main(args, logger)
 
-    except Exception as e:
+    else:
 
-        logger.exception(e)
+        try:
 
-        logger.warning('Shutting down due to exception...')
+            main(args, logger)
+
+        except Exception as e:
+
+            logger.exception(e)
+
+            logger.warning('Shutting down due to exception...')

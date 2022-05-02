@@ -2,6 +2,11 @@
 Evaluation logic.
 '''
 
+import os
+import sys
+sys.path.append(os.getcwd())
+sys.path.append(os.path.join(os.getcwd(), 'eval/'))
+
 from __init__ import *
 
 # Internal imports.
@@ -14,7 +19,6 @@ import logvis
 import utils
 
 
-
 def test(all_args, networks, data_loader, device, logger):
     '''
     :param all_args (dict): train, test, train_dset, test_dest, model.
@@ -24,7 +28,6 @@ def test(all_args, networks, data_loader, device, logger):
     torch.set_grad_enabled(False)
 
     num_steps = len(data_loader)
-    log_folder = 'test_' + test_args.name
 
     start_time = time.time()
 
@@ -36,7 +39,7 @@ def test(all_args, networks, data_loader, device, logger):
         inference_retval = inference.perform_inference(
             data_retval, networks, device, logger, all_args)
 
-        logger.handle_test_step(cur_step, num_steps, data_retval, inference_retval)
+        logger.handle_test_step(cur_step, num_steps, data_retval, inference_retval, all_args)
 
 
 def main(test_args, logger):
@@ -74,10 +77,8 @@ def main(test_args, logger):
 
     logger.info(f'Took {time.time() - start_time:.3f}s')
 
-    if 1:
-        # if 'dbg' not in test_args.name:
-        logger.init_wandb(PROJECT_NAME + '_test', test_args, networks, name=test_args.name,
-                          group='test_debug' if 'dbg' in test_args.name else 'test')
+    logger.init_wandb(PROJECT_NAME + '_test', test_args, networks, name=test_args.name,
+                        group='test_debug' if test_args.is_debug else 'test')
 
     # Print test arguments.
     logger.info('Train command args: ' + str(train_args))
@@ -110,6 +111,13 @@ if __name__ == '__main__':
 
     logger = logvis.MyLogger(test_args, context='test_' + test_args.name)
 
+    if test_args.is_debug:
+
+        # Don't catch exceptions when debugging.
+        main(test_args, logger)
+
+    else:
+
     try:
 
         main(test_args, logger)
@@ -119,4 +127,3 @@ if __name__ == '__main__':
         logger.exception(e)
 
         logger.warning('Shutting down due to exception...')
-
