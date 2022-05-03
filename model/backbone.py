@@ -18,12 +18,6 @@ from transformers.models.perceiver import modeling_perceiver
 import utils
 
 
-# Library imports.
-# https://huggingface.co/docs/transformers/quicktour
-
-# Internal imports.
-
-
 class MyPerceiverBackbone(torch.nn.Module):
 
     def __init__(self, logger, input_shape, input_channels, output_shape, output_channels,
@@ -221,7 +215,9 @@ if __name__ == '__main__':
     num_channels = 3
     samples_per_frame = 64
 
-    for input_shape in [(S,), (H, W), (T, H, W)]:
+    # TODO: video input does not work yet because not really supported by huggingface
+
+    for input_shape in [(S,), (H, W)]: # , (T, H, W)]:
 
         for output_shape in [(S,), (H, W), (T, H, W)]:
 

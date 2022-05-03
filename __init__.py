@@ -8,6 +8,7 @@ import collections
 import collections.abc
 import copy
 import cv2
+import imageio
 import matplotlib.pyplot as plt
 import multiprocessing
 import numpy as np
@@ -19,6 +20,8 @@ import random
 import scipy
 import seaborn as sns
 import shutil
+import sklearn
+import sklearn.decomposition
 import sys
 import time
 import torch
@@ -29,6 +32,7 @@ import torch.utils
 import torch.utils.data
 import torchvision
 import torchvision.datasets
+import torchvision.io
 import torchvision.models
 import torchvision.transforms
 import torchvision.utils

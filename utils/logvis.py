@@ -15,14 +15,19 @@ class MyLogger(logvisgen.Logger):
 
     def __init__(self, args, context):
         if 'batch_size' in args:
-            self.step_interval = 3200 // args.batch_size
+            if args.is_debug:
+                self.step_interval = 80 // args.batch_size
+            else:
+                self.step_interval = 3200 // args.batch_size
         else:
-            self.step_interval = 200
-        self.num_exemplars = 4  # To increase simultaneous examples in wandb during train / val.
+            if args.is_debug:
+                self.step_interval = 20
+            else:
+                self.step_interval = 200
         super().__init__(args.log_path, context)
 
     def handle_train_step(self, epoch, phase, cur_step, total_step, steps_per_epoch,
-                          data_retval, model_retval, loss_retval):
+                          data_retval, model_retval, loss_retval, train_args):
 
         if cur_step % self.step_interval == 0:
 
@@ -43,14 +48,16 @@ class MyLogger(logvisgen.Logger):
 
             gallery = np.stack([rgb_input, rgb_output, rgb_target])
             gallery = np.clip(gallery, 0.0, 1.0)
-            file_name = f'rgb_e{epoch}_p{phase}_s{cur_step}.png'
-            online_name = f'rgb_x{exemplar_idx}'
-            self.save_gallery(gallery, step=epoch, file_name=file_name, online_name=online_name)
+            self.save_gallery(gallery, step=epoch,
+            file_name=f'rgb_e{epoch}_p{phase}_s{cur_step}.png', online_name=f'rgb{exemplar_idx}')
 
     def epoch_finished(self, epoch):
         self.commit_scalars(step=epoch)
 
-    def handle_test_step(self, cur_step, num_steps, data_retval, inference_retval):
+    def handle_test_step(self, cur_step, num_steps, data_retval, inference_retval, all_args):
+        '''
+        :param all_args (dict): train, test, train_dset, test_dest, model.
+        '''
 
         psnr = inference_retval['psnr']
 
