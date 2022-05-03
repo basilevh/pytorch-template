@@ -215,7 +215,8 @@ if __name__ == '__main__':
     num_channels = 3
     samples_per_frame = 64
 
-    # TODO: video input does not work yet because not really supported by huggingface
+    # TODO: Video input does not work yet because not really supported by huggingface.
+    # Instead, my recommendation is to concatenate frames along the channel dimension.
 
     for input_shape in [(S,), (H, W)]: # , (T, H, W)]:
 
