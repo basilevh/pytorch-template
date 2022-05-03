@@ -6,34 +6,7 @@ from __init__ import *
 
 # Internal imports.
 import augs
-import utils
-
-
-def _read_image_robust(img_path, no_fail=False):
-    '''
-    Loads and returns an image that meets conditions along with a success flag, in order to avoid
-    crashing.
-    '''
-    try:
-        image = plt.imread(img_path).copy()
-        success = True
-        if (image.ndim != 3 or image.shape[2] != 3
-                or np.any(np.array(image.strides) < 0)):
-            # Either not RGB or has negative stride, so discard.
-            success = False
-            if no_fail:
-                raise RuntimeError(f'ndim: {image.ndim}  '
-                                   f'shape: {image.shape}  '
-                                   f'strides: {image.strides}')
-
-    except IOError as e:
-        # Probably corrupt file.
-        image = None
-        success = False
-        if no_fail:
-            raise e
-
-    return image, success
+import data_utils
 
 
 def _seed_worker(worker_id):
@@ -56,11 +29,13 @@ def create_train_val_data_loaders(args, logger):
     my_transform = augs.get_train_transform(args.image_dim)
     dset_args = dict()
     dset_args['transform'] = my_transform
+    dset_args['use_data_frac'] = args.use_data_frac
 
     train_dataset = MyImageDataset(
         args.data_path, logger, 'train', **dset_args)
     val_aug_dataset = MyImageDataset(
-        args.data_path, logger, 'val', **dset_args)
+        args.data_path, logger, 'val', **dset_args) \
+        if args.do_val_aug else None
     val_noaug_dataset = MyImageDataset(
         args.data_path, logger, 'val', **dset_args) \
         if args.do_val_noaug else None
@@ -70,7 +45,8 @@ def create_train_val_data_loaders(args, logger):
         shuffle=True, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False)
     val_aug_loader = torch.utils.data.DataLoader(
         val_aug_dataset, batch_size=args.batch_size, num_workers=args.num_workers,
-        shuffle=True, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False)
+        shuffle=True, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False) \
+        if args.do_val_aug else None
     val_noaug_loader = torch.utils.data.DataLoader(
         val_noaug_dataset, batch_size=args.batch_size, num_workers=args.num_workers,
         shuffle=True, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False) \
@@ -88,6 +64,7 @@ def create_test_data_loader(train_args, test_args, train_dset_args, logger):
 
     test_dset_args = copy.deepcopy(train_dset_args)
     test_dset_args['transform'] = my_transform
+    test_dset_args['use_data_frac'] = test_args.use_data_frac
 
     test_dataset = MyImageDataset(
         test_args.data_path, logger, 'test', **test_dset_args)
@@ -105,7 +82,7 @@ class MyImageDataset(torch.utils.data.Dataset):
     dataset.
     '''
 
-    def __init__(self, dataset_root, logger, phase, transform=None):
+    def __init__(self, dataset_root, logger, phase, transform=None, use_data_frac=1.0):
         '''
         :param dataset_root (str): Path to dataset (with or without phase).
         :param logger (MyLogger).
@@ -122,7 +99,7 @@ class MyImageDataset(torch.utils.data.Dataset):
 
         # Load all file paths beforehand.
         # NOTE: This method call handles subdirectories recursively, but also creates extra files.
-        all_files = utils.cached_listdir(phase_dir, allow_exts=['jpg', 'jpeg', 'png'],
+        all_files = data_utils.cached_listdir(phase_dir, allow_exts=['jpg', 'jpeg', 'png'],
                                          recursive=True)
         file_count = len(all_files)
         print('Image file count:', file_count)
@@ -149,7 +126,7 @@ class MyImageDataset(torch.utils.data.Dataset):
             # Read the image at the specified index.
             file_idx = index
             image_fp = self.all_files[file_idx]
-            rgb_input, _ = _read_image_robust(image_fp, no_fail=True)
+            rgb_input, _ = data_utils.read_image_robust(image_fp, no_fail=True)
 
         if 0:
             # Read a random image.
@@ -158,7 +135,7 @@ class MyImageDataset(torch.utils.data.Dataset):
             while not success:
                 file_idx = np.random.choice(self.file_count)
                 image_fp = self.all_files[file_idx]
-                rgb_input, success = _read_image_robust(image_fp)
+                rgb_input, success = data_utils.read_image_robust(image_fp)
 
         # Apply transforms.
         if self.transform is not None:

@@ -5,8 +5,8 @@ Neural network architecture description.
 from __init__ import *
 
 # Internal imports.
-import backbone
-import utils
+import perceiver
+import my_utils
 
 
 class MySimpleModel(torch.nn.Module):

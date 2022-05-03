@@ -47,7 +47,7 @@ def shared_args(parser):
                         help='Path to parent collection of checkpoint folders.')
     parser.add_argument('--log_root', default='logs/', type=str,
                         help='Path to parent collection of logs, visualizations, and results.')
-    parser.add_argument('--name', '--tag', default='tmp1', type=str,
+    parser.add_argument('--name', '--tag', default='', type=str,
                         help='Recognizable, unique tag of this experiment for bookkeeping. A good '
                         'practice would be to include a version number.')
     parser.add_argument('--resume', '--checkpoint_name', default='', type=str,
@@ -56,6 +56,10 @@ def shared_args(parser):
     parser.add_argument('--epoch', default=-1, type=int,
                         help='If >= 0, desired model epoch to evaluate or resume from (0-based), '
                         'otherwise pick latest.')
+                        
+    # Data options (all phases).
+    parser.add_argument('--use_data_frac', default=0.1, type=float,
+                        help='If < 1.0, use a smaller dataset.')
 
     # Automatically inferred options (do not assign).
     parser.add_argument('--is_debug', default=False, type=_str2bool,
@@ -77,21 +81,23 @@ def train_args():
     # Training / misc options.
     parser.add_argument('--num_epochs', default=50, type=int,
                         help='Number of epochs to train for.')
-    parser.add_argument('--checkpoint_interval', default=5, type=int,
+    parser.add_argument('--checkpoint_every', default=5, type=int,
                         help='Store permanent model checkpoint every this number of epochs.')
     parser.add_argument('--learn_rate', default=5e-4, type=float,
                         help='Initial learning rate.')
-    parser.add_argument('--lr_decay', default=0.30, type=float,
+    parser.add_argument('--lr_decay', default=0.3, type=float,
                         help='Learning rate factor per step for scheduler.')
+    parser.add_argument('--do_val_aug', default=True, type=_str2bool,
+                        help='If True, perform validation phase with data augmentation.')
     parser.add_argument('--do_val_noaug', default=False, type=_str2bool,
                         help='If True, also perform validation phase with no data augmentation '
                         'after every epoch, in addition to val_aug.')
-    parser.add_argument('--val_every', default=1, type=int,
+    parser.add_argument('--val_every', default=2, type=int,
                         help='Epoch interval for validation phase(s).')
-    parser.add_argument('--gradient_clip', default=0.5, type=float,
+    parser.add_argument('--gradient_clip', default=0.4, type=float,
                         help='If > 0, clip gradient L2 norm to this value for stability.')
     parser.add_argument('--optimizer', default='adamw', type=str,
-                        help='Which optimizer to use for training (adam / adamw / lamb).')
+                        help='Which optimizer to use for training (sgd / adam / adamw / lamb).')
 
     # Model options.
     parser.add_argument('--image_dim', default=224, type=int,
@@ -133,42 +139,56 @@ def verify_args(args, is_train=False):
 
     args.is_debug = args.name.startswith('d')
 
+    if is_train:
+
+        # Handle allowable options.
+        assert args.optimizer in ['sgd', 'adam', 'adamw', 'lamb']
+
     if args.num_workers < 0:
         if is_train:
-            args.num_workers = max(int(multiprocessing.cpu_count() * 0.9) - 8, 4)
+            if args.is_debug:
+                args.num_workers = max(int(mp.cpu_count() * 0.45) - 6, 4)
+            else:
+                args.num_workers = max(int(mp.cpu_count() * 0.95) - 8, 4)
         else:
-            args.num_workers = max(multiprocessing.cpu_count() // 4 - 6, 4)
+            args.num_workers = max(mp.cpu_count() * 0.25 - 4, 4)
+        args.num_workers = min(args.num_workers, 116)
+    args.num_workers = int(args.num_workers)
 
-    if is_train:
-        # For example, --name v1.
-        args.checkpoint_path = os.path.join(args.checkpoint_root, args.name)
-        args.train_log_path = os.path.join(args.log_root, args.name)
+    # If we have no name (e.g. for smaller scripts in eval), assume we are not interested in logging
+    # either.
+    if args.name != '':
 
-        os.makedirs(args.checkpoint_path, exist_ok=True)
-        os.makedirs(args.train_log_path, exist_ok=True)
+        if is_train:
+            # For example, --name v1.
+            args.checkpoint_path = os.path.join(args.checkpoint_root, args.name)
+            args.train_log_path = os.path.join(args.log_root, args.name)
 
-    if args.resume != '':
-        # Train example: --resume v3 --name dbg4.
-        # Test example: --resume v1 --name t1.
-        # NOTE: In case of train, --name will mostly be ignored.
-        args.checkpoint_path = os.path.join(args.checkpoint_root, args.resume)
-        args.train_log_path = os.path.join(args.log_root, args.resume)
+            os.makedirs(args.checkpoint_path, exist_ok=True)
+            os.makedirs(args.train_log_path, exist_ok=True)
 
-        if args.epoch >= 0:
-            args.resume = os.path.join(args.checkpoint_path, f'model_{args.epoch}.pth')
-            args.name += f'_e{args.epoch}'
+        if args.resume != '':
+            # Train example: --resume v3 --name dbg4.
+            # Test example: --resume v1 --name t1.
+            # NOTE: In case of train, --name will mostly be ignored.
+            args.checkpoint_path = os.path.join(args.checkpoint_root, args.resume)
+            args.train_log_path = os.path.join(args.log_root, args.resume)
+
+            if args.epoch >= 0:
+                args.resume = os.path.join(args.checkpoint_path, f'model_{args.epoch}.pth')
+                args.name += f'_e{args.epoch}'
+            else:
+                args.resume = os.path.join(args.checkpoint_path, 'checkpoint.pth')
+
+            assert os.path.exists(args.checkpoint_path) and os.path.isdir(args.checkpoint_path)
+            assert os.path.exists(args.train_log_path) and os.path.isdir(args.train_log_path)
+            assert os.path.exists(args.resume) and os.path.isfile(args.resume)
+
+        if not(is_train):
+            assert args.resume != ''
+            args.test_log_path = os.path.join(args.train_log_path, 'test_' + args.name)
+            args.log_path = args.test_log_path
+            os.makedirs(args.test_log_path, exist_ok=True)
+
         else:
-            args.resume = os.path.join(args.checkpoint_path, 'checkpoint.pth')
-
-        assert os.path.exists(args.checkpoint_path) and os.path.isdir(args.checkpoint_path)
-        assert os.path.exists(args.train_log_path) and os.path.isdir(args.train_log_path)
-        assert os.path.exists(args.resume) and os.path.isfile(args.resume)
-
-    if not(is_train):
-        assert args.resume != ''
-        args.test_log_path = os.path.join(args.train_log_path, 'test_' + args.name)
-        args.log_path = args.test_log_path
-        os.makedirs(args.test_log_path, exist_ok=True)
-
-    else:
-        args.log_path = args.train_log_path
+            args.log_path = args.train_log_path

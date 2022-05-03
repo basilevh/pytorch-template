@@ -14,16 +14,15 @@ import args
 import data
 import inference
 import loss
-import model
 import logvis
-import utils
+import my_utils
 
 
-def test(all_args, networks, data_loader, device, logger):
+def _test(all_args, networks, data_loader, device, logger):
     '''
-    :param all_args (dict): train, test, train_dset, test_dest, model.
+    :param all_args (dict): train, test, train_dset, test_dset, model.
     '''
-    for net in networks:
+    for net in networks.values():
         net.eval()
     torch.set_grad_enabled(False)
 
@@ -36,9 +35,11 @@ def test(all_args, networks, data_loader, device, logger):
         if cur_step == 0:
             logger.info(f'Enter first data loader iteration took {time.time() - start_time:.3f}s')
 
+        # Perform inference (independently per example).
         inference_retval = inference.perform_inference(
             data_retval, networks, device, logger, all_args)
 
+        # Print and visualize stuff.
         logger.handle_test_step(cur_step, num_steps, data_retval, inference_retval, all_args)
 
 
@@ -77,7 +78,7 @@ def main(test_args, logger):
 
     logger.info(f'Took {time.time() - start_time:.3f}s')
 
-    logger.init_wandb(PROJECT_NAME + '_test', test_args, networks, name=test_args.name,
+    logger.init_wandb(PROJECT_NAME + '_test', test_args, networks.values(), name=test_args.name,
                         group='test_debug' if test_args.is_debug else 'test')
 
     # Print test arguments.
@@ -95,7 +96,7 @@ def main(test_args, logger):
     all_args['model'] = model_args
 
     # Run actual test loop.
-    test(all_args, networks, test_loader, device, logger)
+    _test(all_args, networks, test_loader, device, logger)
 
 
 if __name__ == '__main__':

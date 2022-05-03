@@ -15,7 +15,7 @@ import transformers
 from transformers.models.perceiver import modeling_perceiver
 
 # Internal imports.
-import utils
+import my_utils
 
 
 class MyPerceiverBackbone(torch.nn.Module):

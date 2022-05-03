@@ -7,7 +7,7 @@ from __init__ import *
 
 # Internal imports.
 import loss
-import utils
+import my_utils
 
 
 class MyTrainPipeline(torch.nn.Module):
@@ -19,28 +19,28 @@ class MyTrainPipeline(torch.nn.Module):
         super().__init__()
         self.train_args = train_args
         self.logger = logger
-        self.networks = torch.nn.ModuleList(networks)
-        self.my_model = networks[0]
+        self.networks = torch.nn.ModuleDict(networks)
         self.device = device
         self.phase = None  # Assigned only by set_phase().
         self.losses = None  # Instantiated only by set_phase().
 
     def set_phase(self, phase):
+        '''
+        Must be called when switching between train and validation phases.
+        '''
         self.phase = phase
         self.losses = loss.MyLosses(self.train_args, self.logger, phase)
 
         if phase == 'train':
             self.train()
-            for net in self.networks:
-                if net is not None:
-                    net.train()
+            for (k, v) in self.networks.items():
+                v.train()
             torch.set_grad_enabled(True)
 
         else:
             self.eval()
-            for net in self.networks:
-                if net is not None:
-                    net.eval()
+            for (k, v) in self.networks.items():
+                v.eval()
             torch.set_grad_enabled(False)
 
     def forward(self, data_retval, cur_step, total_step):
@@ -61,7 +61,7 @@ class MyTrainPipeline(torch.nn.Module):
         rgb_input = rgb_input.to(self.device)
 
         # Run model.
-        rgb_output = self.my_model(rgb_input)
+        rgb_output = self.networks['backbone'](rgb_input)
 
         model_retval = dict()
         model_retval['rgb_output'] = rgb_output
@@ -70,7 +70,8 @@ class MyTrainPipeline(torch.nn.Module):
 
         return (model_retval, loss_retval)
 
-    def process_entire_batch(self, data_retval, model_retval, loss_retval, cur_step, total_step):
+    def process_entire_batch(self, data_retval, model_retval, loss_retval, cur_step, total_step,\
+                             epoch_frac):
         '''
         Finalizes the training step. Calculates all losses.
         :param data_retval (dict): Data loader elements.
@@ -78,8 +79,9 @@ class MyTrainPipeline(torch.nn.Module):
         :param loss_retval (dict): Preliminary loss information (per-example, but not batch-wide).
         :param cur_step (int): Current data loader index.
         :param total_step (int): Cumulative data loader index, including all previous epochs.
+        :param epoch_frac (float): Current epoch (0-based) divided by total number of epochs.
         :return loss_retval (dict): All loss information.
         '''
-        loss_retval = self.losses.entire_batch(data_retval, model_retval, loss_retval)
+        loss_retval = self.losses.entire_batch(data_retval, model_retval, loss_retval, epoch_frac)
 
         return loss_retval

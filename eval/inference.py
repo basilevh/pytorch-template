@@ -2,6 +2,12 @@
 Evaluation tools.
 '''
 
+import os
+import sys
+
+from numpy import dtype
+sys.path.append(os.getcwd())
+
 from __init__ import *
 
 # Internal imports.
@@ -11,7 +17,7 @@ import logvis
 import loss
 import model
 import pipeline
-import utils
+import my_utils
 
 
 def load_networks(checkpoint_path, device, logger, epoch=-1):
@@ -19,7 +25,7 @@ def load_networks(checkpoint_path, device, logger, epoch=-1):
     :param checkpoint_path (str): Path to model checkpoint folder or file.
     :param epoch (int): If >= 0, desired checkpoint epoch to load.
     :return (networks, train_args, dset_args, model_args, epoch).
-        networks (list of modules).
+        networks (dict).
         train_args (dict).
         train_dset_args (dict).
         model_args (dict).
@@ -37,19 +43,19 @@ def load_networks(checkpoint_path, device, logger, epoch=-1):
     # Display all arguments to help verify correctness.
     train_args = checkpoint['train_args']
     train_dset_args = checkpoint['dset_args']
-    print_fn('Train command args: ' + str(train_args))
-    print_fn('Train dataset args: ' + str(train_dset_args))
+    # print_fn('Train command args: ' + str(train_args))
+    # print_fn('Train dataset args: ' + str(train_dset_args))
 
     # Get network instance parameters.
-    model_args = checkpoint['model_args']
-    print_fn('My model args: ' + str(model_args))
+    backbone_args = checkpoint['backbone_args']
+    model_args = {'backbone': backbone_args}
 
     # Instantiate networks.
-    my_model = model.MyModel(logger, **model_args)
-    my_model = my_model.to(device)
-    my_model.load_state_dict(checkpoint['my_model'])
-
-    networks = [my_model]
+    networks = dict()
+    backbone_net = model.MyModel(logger, **backbone_args)
+    backbone_net = backbone_net.to(device)
+    backbone_net.load_state_dict(checkpoint['net_backbone'])
+    networks['backbone'] = backbone_net
 
     epoch = checkpoint['epoch']
     print_fn('=> Loaded epoch (1-based): ' + str(epoch + 1))
@@ -60,12 +66,13 @@ def load_networks(checkpoint_path, device, logger, epoch=-1):
 def perform_inference(data_retval, networks, device, logger, all_args):
     '''
     Generates test time predictions.
-    :param all_args (dict): train, test, train_dset, test_dest, model.
+    :param data_retval (dict): Data loader element.
+    :param all_args (dict): train, test, train_dset, test_dset, model.
     '''
     print_fn = logger.info if logger is not None else print
 
-    # Prepare model.
-    my_model = networks[0]
+    # OPTIONAL: Prepare pipeline for DRY.
+    # my_pipeline = pipeline.MyTrainPipeline(all_args['train'], logger, networks, device)
 
     # Prepare data.
     # TODO: Inputs can sometimes be specially constructed / controlled for, and may not be a dict
@@ -75,7 +82,7 @@ def perform_inference(data_retval, networks, device, logger, all_args):
     (B, C, H, W) = rgb_input.shape
 
     # Run model.
-    rgb_output = my_model(rgb_input)
+    rgb_output = networks['backbone'](rgb_input)
     
     # Convert data from torch to numpy for futher processing.
     rgb_input = rearrange(rgb_input, 'B C H W -> B H W C').detach().cpu().numpy()

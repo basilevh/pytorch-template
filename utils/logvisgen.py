@@ -26,13 +26,17 @@ class Logger:
         self.log_dir = log_dir
         self.context = context
         self.log_path = os.path.join(self.log_dir, context + '.log')
-        self.vis_dir = os.path.join(self.log_dir, 'visuals')
+        self.aud_dir = os.path.join(self.log_dir, 'audio')
         self.npy_dir = os.path.join(self.log_dir, 'numpy')
         self.pkl_dir = os.path.join(self.log_dir, 'pickle')
+        self.txt_dir = os.path.join(self.log_dir, 'text')
+        self.vis_dir = os.path.join(self.log_dir, 'visuals')
+        os.makedirs(self.aud_dir, exist_ok=True)
         os.makedirs(self.log_dir, exist_ok=True)
-        os.makedirs(self.vis_dir, exist_ok=True)
         os.makedirs(self.npy_dir, exist_ok=True)
         os.makedirs(self.pkl_dir, exist_ok=True)
+        os.makedirs(self.txt_dir, exist_ok=True)
+        os.makedirs(self.vis_dir, exist_ok=True)
 
         logging.basicConfig(
             level=logging.INFO,
@@ -43,9 +47,13 @@ class Logger:
             ]
         )
 
+        # These lists store losses and other values on an epoch-level time scale, per key.
         self.scalar_memory = collections.defaultdict(list)
         self.scalar_memory_hist = dict()
         self.initialized = False
+
+        # This method call initializes some more variables and resets them for every epoch.
+        self.epoch_finished(-1)
 
     def save_args(self, args):
         '''
@@ -143,18 +151,41 @@ class Logger:
         if self.initialized:
             wandb.log({key: wandb.Histogram(value)}, step=step)
 
-    def save_image(self, image, step=None, file_name=None, online_name=None):
+    def save_image(self, image, step=None, file_name=None, online_name=None, caption=None,
+                   upscale_factor=2, accumulate_online=16):
         '''
         Records a single image to a file in visuals and/or the online dashboard.
         '''
         if image.dtype == np.float32:
             image = (image * 255.0).astype(np.uint8)
+
+        if upscale_factor > 1:
+            image = cv2.resize(
+                image,
+                (image.shape[1] * upscale_factor, image.shape[0] * upscale_factor),
+                interpolation=cv2.INTER_NEAREST)
+
         if file_name is not None:
             plt.imsave(os.path.join(self.vis_dir, file_name), image)
-        if online_name is not None and self.initialized:
-            wandb.log({online_name: wandb.Image(image)}, step=step)
 
-    def save_video(self, frames, step=None, file_name=None, online_name=None, fps=6):
+        if online_name is not None and self.initialized:
+            self.accum_image_buffer[online_name].append(wandb.Image(image, caption=caption))
+            if len(self.accum_image_buffer[online_name]) >= accumulate_online:
+                wandb.log({online_name: self.accum_image_buffer[online_name]}, step=step)
+                self.accum_image_buffer[online_name] = []
+
+    def save_audio(self, waveform, sample_rate=48000, step=None, file_name=None, online_name=None):
+        '''
+        Records a single audio waveform to a file in audio and/or the online dashboard.
+        '''
+        if file_name is not None:
+            scipy.io.wavfile.write(os.path.join(self.aud_dir, file_name), sample_rate, waveform)
+        if online_name is not None and self.initialized:
+            wandb.log({online_name: wandb.Audio(waveform, sample_rate=sample_rate)},
+                      step=step)
+
+    def save_video(self, frames, step=None, file_name=None, online_name=None, caption=None, fps=6,
+                   accumulate_online=16):
         '''
         Records a single set of frames as a video to a file in visuals and/or the online dashboard.
         '''
@@ -163,16 +194,21 @@ class Logger:
         frames = np.concatenate([frames, last_frame], axis=0)
         if frames.dtype == np.float32:
             frames = (frames * 255.0).astype(np.uint8)
+
         if file_name is not None:
             file_path = os.path.join(self.vis_dir, file_name)
             imageio.mimwrite(file_path, frames, fps=fps)
-        if online_name is not None and self.initialized:
-            # This is bugged in wandb:
-            # wandb.log({online_name: wandb.Video(frames, fps=fps, format='gif')}, step=step)
-            assert file_name is not None
-            wandb.log({online_name: wandb.Video(file_path, fps=fps, format='gif')}, step=step)
 
-    def save_gallery(self, frames, step=None, file_name=None, online_name=None):
+        if online_name is not None and self.initialized:
+            assert file_name is not None
+            self.accum_video_buffer[online_name].append(
+                wandb.Video(file_path, caption=caption, fps=fps, format='gif'))
+            if len(self.accum_video_buffer[online_name]) >= accumulate_online:
+                wandb.log({online_name: self.accum_video_buffer[online_name]}, step=step)
+                self.accum_video_buffer[online_name] = []
+
+    def save_gallery(self, frames, step=None, file_name=None, online_name=None, caption=None,
+                     upscale_factor=1, accumulate_online=16):
         '''
         Records a single set of frames as a gallery image to a file in visuals and/or the online
         dashboard.
@@ -188,12 +224,18 @@ class Logger:
             gallery = np.concatenate(gallery, axis=1)  # (A*H, B*W, 1/3?).
         else:
             raise ValueError('Too many dimensions to create a gallery.')
-        if gallery.dtype == np.float32:
+        if gallery.dtype == np.float32 or gallery.dtype == np.float64:
             gallery = (gallery * 255.0).astype(np.uint8)
-        if file_name is not None:
-            plt.imsave(os.path.join(self.vis_dir, file_name), gallery)
-        if online_name is not None and self.initialized:
-            wandb.log({online_name: wandb.Image(gallery)}, step=step)
+
+        if upscale_factor > 1:
+            gallery = cv2.resize(
+                gallery,
+                (gallery.shape[1] * upscale_factor, gallery.shape[0] * upscale_factor),
+                interpolation=cv2.INTER_NEAREST)
+
+        self.save_image(gallery, step=step, file_name=file_name, online_name=online_name,
+                        caption=caption, upscale_factor=upscale_factor,
+                        accumulate_online=accumulate_online)
 
     def save_numpy(self, array, file_name, step=None, folder=None):
         '''
@@ -218,3 +260,42 @@ class Logger:
         dst_fp = os.path.join(dst_dp, file_name)
         with open(dst_fp, 'wb') as f:
             pickle.dump(obj, f)
+
+    def save_text(self, text_obj, file_name, step=None, folder=None):
+        '''
+        Stores a raw string, or a dict, or a JSON object, as text locally, either in text or a
+        chosen directory.
+        '''
+        if folder is None:
+            dst_dp = self.txt_dir
+        else:
+            dst_dp = os.path.join(self.log_dir, folder)
+            os.makedirs(dst_dp, exist_ok=True)
+        dst_fp = os.path.join(dst_dp, file_name)
+
+        # https://stackoverflow.com/questions/64154850/convert-dictionary-to-a-json-in-python
+        class NumpyFloatValuesEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, np.float32):
+                    return float(obj)
+                elif torch.is_tensor(obj):
+                    if obj.ndim == 0:
+                        return float(obj.item())
+                    else:
+                        return obj.tolist()  # Handles an arbitrary number of dimensions.
+                else:
+                    return json.JSONEncoder.default(self, obj)
+
+        if isinstance(text_obj, str):
+            with open(dst_fp, 'w') as f:
+                f.write(text_obj)
+        else:  # Assume dict or json.
+            with open(dst_fp, 'w') as f:
+                json.dump(text_obj, f, indent=2, cls=NumpyFloatValuesEncoder)
+
+    def epoch_finished(self, epoch):
+        # These lists store visuals on a step-level time scale, per key.
+        # We clear them every epoch to avoid leaking information between epochs.
+        # NOTE: Gallery calls image, so the same buffer dictionary is used.
+        self.accum_image_buffer = collections.defaultdict(list)
+        self.accum_video_buffer = collections.defaultdict(list)

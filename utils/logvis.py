@@ -29,10 +29,11 @@ class MyLogger(logvisgen.Logger):
     def handle_train_step(self, epoch, phase, cur_step, total_step, steps_per_epoch,
                           data_retval, model_retval, loss_retval, train_args):
 
+        color_map = plt.get_cmap('magma')
+
         if cur_step % self.step_interval == 0:
 
-            exemplar_idx = (cur_step // self.step_interval) % self.num_exemplars
-
+            batch_size = model_retval['rgb_input'].shape[0]
             total_loss = loss_retval['total']
             loss_l1 = loss_retval['l1']
 
@@ -40,6 +41,10 @@ class MyLogger(logvisgen.Logger):
             self.info(f'[Step {cur_step} / {steps_per_epoch}]  '
                       f'total_loss: {total_loss:.3f}  '
                       f'loss_l1: {loss_l1:.3f}')
+
+            # Save metadata in JSON format, for eventual inspection / debugging / reproducibility.
+            metadata = dict()
+            metadata['batch_size'] = batch_size
 
             # Save input, prediction, and ground truth images.
             rgb_input = data_retval['rgb_input'][0].permute(1, 2, 0).detach().cpu().numpy()
@@ -49,21 +54,31 @@ class MyLogger(logvisgen.Logger):
             gallery = np.stack([rgb_input, rgb_output, rgb_target])
             gallery = np.clip(gallery, 0.0, 1.0)
             self.save_gallery(gallery, step=epoch,
-            file_name=f'rgb_e{epoch}_p{phase}_s{cur_step}.png', online_name=f'rgb{exemplar_idx}')
+                              file_name=f'rgb_e{epoch}_p{phase}_s{cur_step}.png',
+                              online_name=f'rgb_p{phase}')
+            
+            self.save_text(metadata, file_name=f'metadata_e{epoch}_p{phase}_s{cur_step}.txt')
 
     def epoch_finished(self, epoch):
+        super().epoch_finished(epoch)
         self.commit_scalars(step=epoch)
 
     def handle_test_step(self, cur_step, num_steps, data_retval, inference_retval, all_args):
         '''
-        :param all_args (dict): train, test, train_dset, test_dest, model.
+        :param all_args (dict): train, test, train_dset, test_dset, model.
         '''
 
+        color_map = plt.get_cmap('magma')
+        batch_size = data_retval['rgb_input'].shape[0]
         psnr = inference_retval['psnr']
 
         # Print metrics in console.
         self.info(f'[Step {cur_step} / {num_steps}]  '
                   f'psnr: {psnr.mean():.2f} ± {psnr.std():.2f}')
+            
+        # Save metadata in JSON format, for inspection / debugging / reproducibility.
+        metadata = dict()
+        metadata['batch_size'] = batch_size
 
         # Save input, prediction, and ground truth images.
         rgb_input = inference_retval['rgb_input']
@@ -72,6 +87,9 @@ class MyLogger(logvisgen.Logger):
 
         gallery = np.stack([rgb_input, rgb_output, rgb_target])
         gallery = np.clip(gallery, 0.0, 1.0)
-        file_name = f'rgb_iogt_s{cur_step}.png'
-        online_name = f'rgb_iogt'
-        self.save_gallery(gallery, step=cur_step, file_name=file_name, online_name=online_name)
+        self.save_gallery(gallery, step=cur_step,
+                          file_name=f'rgb_iogt_s{cur_step}.png',
+                          online_name=f'rgb_iogt')
+
+        self.save_text(metadata, file_name=f'metadata_s{cur_step}.txt')
+

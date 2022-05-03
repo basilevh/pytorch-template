@@ -11,19 +11,21 @@ import torch_optimizer
 import args
 import data
 import loss
-import model
 import logvis
+import model
 import pipeline
-import utils
+import my_utils
 
 
 def _get_learning_rate(optimizer):
+    if isinstance(optimizer, dict):
+        optimizer = my_utils.any_value(optimizer)
     for param_group in optimizer.param_groups:
         return param_group['lr']
 
 
-def _train_one_epoch(args, train_pipeline, phase, epoch, optimizer,
-                     lr_scheduler, data_loader, device, logger):
+def _train_one_epoch(args, train_pipeline, networks_nodp, phase, epoch, optimizers,
+                     lr_schedulers, data_loader, device, logger):
     assert phase in ['train', 'val', 'val_aug', 'val_noaug']
 
     log_str = f'Epoch (1-based): {epoch + 1} / {args.num_epochs}'
@@ -32,7 +34,7 @@ def _train_one_epoch(args, train_pipeline, phase, epoch, optimizer,
     logger.info(log_str)
     if phase == 'train':
         logger.info(f'===> Train ({phase})')
-        logger.report_scalar(phase + '/learn_rate', _get_learning_rate(optimizer), step=epoch)
+        logger.report_scalar(phase + '/learn_rate', _get_learning_rate(optimizers), step=epoch)
     else:
         logger.info(f'===> Validation ({phase})')
 
@@ -55,8 +57,8 @@ def _train_one_epoch(args, train_pipeline, phase, epoch, optimizer,
             (model_retval, loss_retval) = train_pipeline[0](data_retval, cur_step, total_step)
 
             loss_retval = train_pipeline[1].process_entire_batch(
-                data_retval, model_retval, loss_retval, cur_step, total_step)
-            total_loss = loss_retval['total']
+                data_retval, model_retval, loss_retval, cur_step, total_step,
+                epoch / args.num_epochs)
 
         else:
             try:
@@ -67,8 +69,8 @@ def _train_one_epoch(args, train_pipeline, phase, epoch, optimizer,
                 # Second, process accumulated information, for example contrastive loss functionality.
                 # This part typically happens on the first GPU, so it should be kept minimal in memory.
                 loss_retval = train_pipeline[1].process_entire_batch(
-                    data_retval, model_retval, loss_retval, cur_step, total_step)
-                total_loss = loss_retval['total']
+                    data_retval, model_retval, loss_retval, cur_step, total_step,
+                    epoch / args.num_epochs)
 
             except Exception as e:
 
@@ -82,39 +84,41 @@ def _train_one_epoch(args, train_pipeline, phase, epoch, optimizer,
         # Perform backpropagation to update model parameters.
         if phase == 'train':
 
-            optimizer.zero_grad()
-            total_loss.backward()
+            optimizers['backbone'].zero_grad()
+            loss_retval['total'].backward()
 
             # Apply gradient clipping if desired.
             if args.gradient_clip > 0.0:
-                torch.nn.utils.clip_grad_norm_(train_pipeline[0].parameters(), args.gradient_clip)
+                torch.nn.utils.clip_grad_norm_(networks_nodp['backbone'].parameters(),
+                                               args.gradient_clip)
 
-            optimizer.step()
+            optimizers['backbone'].step()
 
         # Print and visualize stuff.
         logger.handle_train_step(epoch, phase, cur_step, total_step, steps_per_epoch,
-                           data_retval, model_retval, loss_retval, args)
+                                 data_retval, model_retval, loss_retval, args)
 
-        # DEBUG:
         if cur_step >= 200 and args.is_debug:
             logger.warning('Cutting epoch short for debugging...')
             break
 
     if phase == 'train':
-        lr_scheduler.step()
+        lr_schedulers['backbone'].step()
 
 
-def _train_all_epochs(args, train_pipeline, optimizer, lr_scheduler, start_epoch, train_loader,
-                      val_aug_loader, val_noaug_loader, device, logger, checkpoint_fn):
+def _train_all_epochs(args, train_pipeline, networks_nodp, optimizers, lr_schedulers, start_epoch,
+                      train_loader, val_aug_loader, val_noaug_loader, device, logger,
+                      checkpoint_fn):
 
     logger.info('Start training loop...')
     start_time = time.time()
+
     for epoch in range(start_epoch, args.num_epochs):
 
         # Training.
         _train_one_epoch(
-            args, train_pipeline, 'train', epoch, optimizer,
-            lr_scheduler, train_loader, device, logger)
+            args, train_pipeline, networks_nodp, 'train', epoch, optimizers,
+            lr_schedulers, train_loader, device, logger)
 
         # Save model weights.
         checkpoint_fn(epoch)
@@ -122,15 +126,16 @@ def _train_all_epochs(args, train_pipeline, optimizer, lr_scheduler, start_epoch
         if epoch % args.val_every == 0:
 
             # Validation with data augmentation.
-            _train_one_epoch(
-                args, train_pipeline, 'val_aug', epoch, optimizer,
-                lr_scheduler, val_aug_loader, device, logger)
+            if args.do_val_aug:
+                _train_one_epoch(
+                    args, train_pipeline, networks_nodp, 'val_aug', epoch, optimizers,
+                    lr_schedulers, val_aug_loader, device, logger)
 
             # Validation without data augmentation.
             if args.do_val_noaug:
                 _train_one_epoch(
-                    args, train_pipeline, 'val_noaug', epoch, optimizer,
-                    lr_scheduler, val_noaug_loader, device, logger)
+                    args, train_pipeline, networks_nodp, 'val_noaug', epoch, optimizers,
+                    lr_schedulers, val_noaug_loader, device, logger)
 
         logger.epoch_finished(epoch)
 
@@ -168,14 +173,15 @@ def main(args, logger):
     start_time = time.time()
 
     # Instantiate networks.
-    model_args = dict()
-    my_model = model.MyModel(logger, **model_args)
+    networks = dict()
+    backbone_args = dict()
+    backbone_net = model.MyModel(logger, **backbone_args)
+    networks['backbone'] = backbone_net
 
     # Bundle networks into a list.
-    networks = [my_model]
-    for i in range(len(networks)):
-        networks[i] = networks[i].to(device)
-    networks_nodp = [net for net in networks]
+    for (k, v) in networks.items():
+        networks[k] = networks[k].to(device)
+    networks_nodp = networks.copy()  # TODO check correctness
 
     # Instantiate encompassing pipeline for more efficient parallelization.
     train_pipeline = pipeline.MyTrainPipeline(args, logger, networks, device)
@@ -184,26 +190,35 @@ def main(args, logger):
     if args.device == 'cuda':
         train_pipeline = torch.nn.DataParallel(train_pipeline)
 
-    # Instantiate optimizer & learning rate scheduler.
-    if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(train_pipeline.parameters(), lr=args.learn_rate)
+    # Instantiate optimizers and learning rate schedulers.
+    optimizers = dict()
+    lr_schedulers = dict()
+    if args.optimizer == 'sgd':
+        optimizer_class = torch.optim.SGD
+    elif args.optimizer == 'adam':
+        optimizer_class = torch.optim.Adam
     elif args.optimizer == 'adamw':
-        optimizer = torch.optim.AdamW(train_pipeline.parameters(), lr=args.learn_rate)
+        optimizer_class = torch.optim.AdamW
     elif args.optimizer == 'lamb':
-        optimizer = torch_optimizer.Lamb(train_pipeline.parameters(), lr=args.learn_rate)
+        optimizer_class = torch_optimizer.Lamb
     milestones = [(args.num_epochs * 2) // 5,
                   (args.num_epochs * 3) // 5,
                   (args.num_epochs * 4) // 5]
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, milestones, gamma=args.lr_decay)
+    for (k, v) in networks.items():
+        optimizers[k] = optimizer_class(v.parameters(), lr=args.learn_rate)
+        lr_schedulers[k] = torch.optim.lr_scheduler.MultiStepLR(
+            optimizers[k], milestones, gamma=args.lr_decay)
 
     # Load weights from checkpoint if specified.
     if args.resume:
         logger.info('Loading weights from: ' + args.resume)
         checkpoint = torch.load(args.resume, map_location='cpu')
-        networks_nodp[0].load_state_dict(checkpoint['my_model'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        for (k, v) in networks_nodp.items():
+            v.load_state_dict(checkpoint['net_' + k])
+        for (k, v) in optimizers.items():
+            v.load_state_dict(checkpoint['optim_' + k])
+        for (k, v) in lr_schedulers.items():
+            v.load_state_dict(checkpoint['lr_sched_' + k])
         start_epoch = checkpoint['epoch'] + 1
     else:
         start_epoch = 0
@@ -215,22 +230,27 @@ def main(args, logger):
         if args.checkpoint_path:
             logger.info(f'Saving model checkpoint to {args.checkpoint_path}...')
             checkpoint = {
-                'optimizer': optimizer.state_dict(),
-                'lr_scheduler': lr_scheduler.state_dict(),
                 'epoch': epoch,
                 'train_args': args,
                 'dset_args': dset_args,
-                'model_args': model_args,
+                'backbone_args': backbone_args,
             }
-            checkpoint['my_model'] = networks_nodp[0].state_dict()
-            if epoch % args.checkpoint_interval == 0:
+            for (k, v) in networks_nodp.items():
+                checkpoint['net_' + k] = v.state_dict()
+            for (k, v) in optimizers.items():
+                checkpoint['optim_' + k] = v.state_dict()
+            for (k, v) in lr_schedulers.items():
+                checkpoint['lr_sched_' + k] = v.state_dict()
+            # Save certain fixed model epoch only once in a while.
+            if epoch % args.checkpoint_every == 0:
                 torch.save(checkpoint,
                         os.path.join(args.checkpoint_path, 'model_{}.pth'.format(epoch)))
+            # Always update most recent checkpoint after every epoch.
             torch.save(checkpoint,
                        os.path.join(args.checkpoint_path, 'checkpoint.pth'))
             logger.info()
 
-    logger.init_wandb(PROJECT_NAME, args, networks, name=args.name,
+    logger.init_wandb(PROJECT_NAME, args, networks.values(), name=args.name + '_',
                         group='train_debug' if args.is_debug else 'train')
 
     # Print train arguments.
@@ -239,8 +259,9 @@ def main(args, logger):
 
     # Start training loop.
     _train_all_epochs(
-        args, (train_pipeline, train_pipeline_nodp), optimizer, lr_scheduler, start_epoch,
-        train_loader, val_aug_loader, val_noaug_loader, device, logger, save_model_checkpoint)
+        args, (train_pipeline, train_pipeline_nodp), networks_nodp, optimizers, lr_schedulers,
+        start_epoch, train_loader, val_aug_loader, val_noaug_loader, device, logger,
+        save_model_checkpoint)
 
 
 if __name__ == '__main__':

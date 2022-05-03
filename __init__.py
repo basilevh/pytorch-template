@@ -10,7 +10,7 @@ import copy
 import cv2
 import imageio
 import matplotlib.pyplot as plt
-import multiprocessing
+import multiprocessing as mp
 import numpy as np
 import os
 import pathlib
