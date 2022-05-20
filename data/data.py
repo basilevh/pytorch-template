@@ -25,19 +25,18 @@ def create_train_val_data_loaders(args, logger):
     return (train_loader, val_aug_loader, val_noaug_loader, dset_args).
     '''
 
-    # TODO: Figure out noaug val dataset args as well.
-    my_transform = augs.get_train_transform(args.image_dim)
     dset_args = dict()
-    dset_args['transform'] = my_transform
+    dset_args['image_height'] = 224
+    dset_args['image_width'] = 288
     dset_args['use_data_frac'] = args.use_data_frac
 
     train_dataset = MyImageDataset(
-        args.data_path, logger, 'train', **dset_args)
+        args.data_path, logger, 'train', do_random_augs=True, **dset_args)
     val_aug_dataset = MyImageDataset(
-        args.data_path, logger, 'val', **dset_args) \
+        args.data_path, logger, 'val', do_random_augs=True, **dset_args) \
         if args.do_val_aug else None
     val_noaug_dataset = MyImageDataset(
-        args.data_path, logger, 'val', **dset_args) \
+        args.data_path, logger, 'val', do_random_augs=False, **dset_args) \
         if args.do_val_noaug else None
 
     train_loader = torch.utils.data.DataLoader(
@@ -60,14 +59,11 @@ def create_test_data_loader(train_args, test_args, train_dset_args, logger):
     return (test_loader, test_dset_args).
     '''
 
-    my_transform = augs.get_test_transform(train_args.image_dim)
-
     test_dset_args = copy.deepcopy(train_dset_args)
-    test_dset_args['transform'] = my_transform
     test_dset_args['use_data_frac'] = test_args.use_data_frac
 
     test_dataset = MyImageDataset(
-        test_args.data_path, logger, 'test', **test_dset_args)
+        test_args.data_path, logger, 'test', do_random_augs=False, **test_dset_args)
 
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=test_args.batch_size, num_workers=test_args.num_workers,
@@ -82,71 +78,122 @@ class MyImageDataset(torch.utils.data.Dataset):
     dataset.
     '''
 
-    def __init__(self, dataset_root, logger, phase, transform=None, use_data_frac=1.0):
+    def __init__(self, dataset_root, logger, phase, image_height=224, image_width=224,
+                 use_data_frac=1.0, do_random_augs=False):
         '''
         :param dataset_root (str): Path to dataset (with or without phase).
         :param logger (MyLogger).
         :param phase (str): train / val_aug / val_noaug / test.
         :param transform: Data transform to apply on every image.
         '''
+        self.log_info_fn = logger.info if logger is not None else print
+        self.log_warning_fn = logger.warning if logger is not None else print
+
         # Get root and phase directories.
-        phase_dir = os.path.join(dataset_root, phase)
-        if not os.path.exists(phase_dir):
+        phase_dp = os.path.join(dataset_root, phase)
+        if not os.path.exists(phase_dp):
             # We may already be pointing to a phase directory (which, in the interest of
             # flexibility, is not necessarily the same as the passed phase argument).
-            phase_dir = dataset_root
+            phase_dp = dataset_root
             dataset_root = str(pathlib.Path(dataset_root).parent)
 
         # Load all file paths beforehand.
         # NOTE: This method call handles subdirectories recursively, but also creates extra files.
-        all_files = data_utils.cached_listdir(phase_dir, allow_exts=['jpg', 'jpeg', 'png'],
-                                         recursive=True)
+        all_files = data_utils.cached_listdir(phase_dp, allow_exts=['jpg', 'jpeg', 'png'],
+                                              recursive=True)
         file_count = len(all_files)
-        print('Image file count:', file_count)
+        self.log_info_fn(f'Image file count: {file_count}')
         dset_size = file_count
+
+        # Define color and final resize transforms.
+        to_tensor = torchvision.transforms.ToTensor()
+        pre_transform = torchvision.transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+        post_transform = torchvision.transforms.Resize((image_height, image_width))
 
         self.dataset_root = dataset_root
         self.logger = logger
         self.phase = phase
-        self.phase_dir = phase_dir
-        self.transform = transform
+        self.image_height = image_height
+        self.image_width = image_width
+        self.use_data_frac = use_data_frac
+        self.do_random_augs = do_random_augs
+
+        self.to_tensor = to_tensor
+        self.pre_transform = pre_transform
+        self.post_transform = post_transform
+        self.phase_dp = phase_dp
         self.all_files = all_files
         self.file_count = file_count
         self.dset_size = dset_size
+        self.force_shuffle = (use_data_frac < 1.0)
 
     def __len__(self):
-        return self.dset_size
+        return int(self.dset_size * self.use_data_frac)
 
     def __getitem__(self, index):
         # TODO: Select either deterministic or random mode.
-        # Sometimes, not every element in the dataset is actually suitable, in which case retries
-        # may be needed, and as such the latter option is preferred.
+        retries = 0
+        file_idx = -1
+        image_fp = ''
 
-        if 1:
+        if 0:
             # Read the image at the specified index.
             file_idx = index
             image_fp = self.all_files[file_idx]
-            rgb_input, _ = data_utils.read_image_robust(image_fp, no_fail=True)
+            raw_image, _ = data_utils.read_image_robust(image_fp, no_fail=True)
 
-        if 0:
-            # Read a random image.
-            success = True
-            file_idx = -1
-            while not success:
-                file_idx = np.random.choice(self.file_count)
-                image_fp = self.all_files[file_idx]
-                rgb_input, success = data_utils.read_image_robust(image_fp)
+        if 1:
+            # Some files may be invalid, so we keep retrying (up to an upper bound).
+            while True:
+                try:
 
-        # Apply transforms.
-        if self.transform is not None:
-            rgb_input = self.src_transform(rgb_input)
+                    if not(self.force_shuffle) and retries == 0:
+                        file_idx = index
+                    else:
+                        file_idx = np.random.randint(self.dset_size)
+
+                    image_fp = self.all_files[file_idx]
+                    raw_image, success = data_utils.read_image_robust(image_fp)
+                    # (3, H, W) tensor.
+
+                    if success:
+                        break
+
+                except Exception as e:
+
+                    self.log_warning_fn(f'retries: {retries}')
+                    self.log_warning_fn(str(e))
+                    self.log_warning_fn(f'image_fp: {image_fp}')
+                    retries += 1
+                    if retries >= 12:
+                        raise e
+
+        raw_image = self.to_tensor(raw_image / 255.0)
+        raw_image = raw_image.type(torch.float32)
+        raw_image = rearrange(raw_image, 'H W C -> C H W')
+        (C, H, W) = raw_image.shape
+        distort_image = raw_image
+
+        if self.do_random_augs:
+            crop_y1 = np.random.rand() * 0.1 + 0.1
+            crop_y2 = np.random.rand() * 0.1 + 0.8
+            crop_x1 = np.random.rand() * 0.1 + 0.1
+            crop_x2 = np.random.rand() * 0.1 + 0.8
+            crop_image = distort_image[:, int(crop_y1 * H):int(crop_y2 * H),
+                                       int(crop_x1 * W):int(crop_x2 * W)]
+            # Resize to final size (always).
+            resize_image = self.post_transform(crop_image)
+
+        else:
+            resize_image = self.post_transform(distort_image)
 
         # Obtain ground truth.
+        rgb_input = resize_image
         rgb_target = 1.0 - rgb_input
 
         # Return results.
-        result = {'rgb_input': rgb_input,  # (H, W, 3).
-                  'rgb_target': rgb_target,  # (H, W, 3).
+        result = {'rgb_input': rgb_input,  # (3, H, W).
+                  'rgb_target': rgb_target,  # (3, H, W).
                   'file_idx': file_idx,
-                  'path': image_fp}
+                  'image_fp': image_fp}
         return result
