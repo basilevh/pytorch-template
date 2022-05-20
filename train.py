@@ -177,8 +177,8 @@ def main(args, logger):
     backbone_args = dict()
     
     # backbone_net = model.MyModel(logger, **backbone_args)
-    # backbone_net = model.MyDenseVitModel(logger, **backbone_args)
-    backbone_net = model.MyPerceiverModel(logger, **backbone_args)
+    backbone_net = model.MyDenseVitModel(logger, **backbone_args)
+    # backbone_net = model.MyPerceiverModel(logger, **backbone_args)
     
     networks['backbone'] = backbone_net
 

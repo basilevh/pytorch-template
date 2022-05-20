@@ -154,7 +154,7 @@ class MyImageDataset(torch.utils.data.Dataset):
 
                     image_fp = self.all_files[file_idx]
                     raw_image, success = data_utils.read_image_robust(image_fp)
-                    # (3, H, W) tensor.
+                    # (H, W, 3) array.
 
                     if success:
                         break
@@ -168,9 +168,8 @@ class MyImageDataset(torch.utils.data.Dataset):
                     if retries >= 12:
                         raise e
 
-        raw_image = self.to_tensor(raw_image / 255.0)
+        raw_image = self.to_tensor(raw_image / 255.0)  # (H, W, 3) array -> (3, H, W) tensor.
         raw_image = raw_image.type(torch.float32)
-        raw_image = rearrange(raw_image, 'H W C -> C H W')
         (C, H, W) = raw_image.shape
         distort_image = raw_image
 

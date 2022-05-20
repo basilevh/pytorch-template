@@ -40,9 +40,14 @@ class MyDenseVitModel(torch.nn.Module):
         self.backbone = vision_tf.MyDenseVisionTransformerBackbone(
             logger, 224, 288, 3)
 
+        # TODO lin proj
+
     def forward(self, x):
 
         y = self.backbone(x)
+
+        # x torch.Size([8, 3, 224, 288])
+        # y torch.Size([8, 768, 14, 18])
 
         return y
 
@@ -57,6 +62,6 @@ class MyPerceiverModel(torch.nn.Module):
 
     def forward(self, x):
 
-        y = self.backbone(x)
+        (y, _) = self.backbone(x)
 
         return y
