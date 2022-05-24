@@ -9,7 +9,7 @@
             "type": "python",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
         },
         {
             "name": "train_dbg",
@@ -21,11 +21,13 @@
             },
             "args": [
                 "--name",
-                "d1",
+                "d2",
                 "--data_path",
                 "/data/ImageNet-1k-ILSVRC/Data/CLS-LOC/",
+                "--num_workers",
+                "12",
                 "--batch_size",
-                "16",
+                "8",
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/",
@@ -43,6 +45,8 @@
                 "dt1",
                 "--gpu_id",
                 "0",
+                "--num_workers",
+                "8",
                 "--batch_size",
                 "8",
                 "--data_path",
@@ -52,5 +56,9 @@
             "cwd": "${workspaceFolder}/",
             "justMyCode": true,
         },
-    ]
+    ],
+    // "skipFiles": [
+    //     "/home/basilevanhoorick/workspace/hf-transformers/**",
+    //     "${workspaceFolder}/../hf-transformers/**",
+    // ],
 }

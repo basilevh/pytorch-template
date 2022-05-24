@@ -21,6 +21,7 @@ class MySimpleModel(torch.nn.Module):
         '''
         super().__init__()
         self.logger = logger
+
         self.net = torch.nn.Conv2d(3, 3, 1)
 
     def forward(self, rgb_input):
@@ -29,39 +30,69 @@ class MySimpleModel(torch.nn.Module):
         :return rgb_output (B, 3, Hi, Wi) tensor.
         '''
         rgb_output = self.net(rgb_input)
+
         return rgb_output
 
 
 class MyDenseVitModel(torch.nn.Module):
 
-    def __init__(self, logger):
+    def __init__(self, logger, image_height, image_width, in_channels, out_channels):
         super().__init__()
+        self.logger = logger
+        self.image_height = image_height
+        self.image_width = image_width
+        self.in_channels = in_channels
+        self.out_channels = out_channels
 
         self.backbone = vision_tf.MyDenseVisionTransformerBackbone(
-            logger, 224, 288, 3)
+            logger, image_height, image_width, in_channels)
 
-        # TODO lin proj
+        self.post_proj = torch.nn.Linear(self.backbone.output_feature_dim,
+            self.backbone.ho * self.backbone.wo * self.out_channels)
 
-    def forward(self, x):
+    def forward(self, rgb_input):
+        '''
+        :param rgb_input (B, Ci, Hi, Wi) tensor.
+        :return rgb_output (B, Co, Hi, Wi) tensor.
+        '''
+        # rgb_input = (B, 3, 224, 288).
+        
+        embs_output = self.backbone(rgb_input)  # (B, D, H, W) = (B, 768, 14, 18).
+        
+        embs_output = rearrange(embs_output, 'B D H W -> B H W D')
+        
+        rgb_output = self.post_proj(embs_output)  # (B, H, W, D) = (B, 768, 14, 18).
+        
+        rgb_output = rearrange(rgb_output, 'B H W (h w C) -> B C (H h) (W w)',
+                                h=self.backbone.ho, w=self.backbone.wo, C=self.out_channels)
+        
+        # rgb_output = (B, Co, Hi, Wi) = (B, 3, 224, 288).
 
-        y = self.backbone(x)
-
-        # x torch.Size([8, 3, 224, 288])
-        # y torch.Size([8, 768, 14, 18])
-
-        return y
+        return rgb_output
 
 
 class MyPerceiverModel(torch.nn.Module):
 
-    def __init__(self, logger):
+    def __init__(self, logger, image_height, image_width, in_channels, out_channels):
         super().__init__()
+        self.logger = logger
+        self.image_height = image_height
+        self.image_width = image_width
+        self.in_channels = in_channels
+        self.out_channels = out_channels
 
         self.backbone = perceiver.MyPerceiverBackbone(
-            logger, (224, 288), 3, (224, 288), 3, 0, 'fourier')
+            logger, (image_height, image_width), in_channels, (image_height, image_width),
+            out_channels, -1, 'fourier')
 
-    def forward(self, x):
+    def forward(self, rgb_input):
+        '''
+        :param rgb_input (B, Ci, Hi, Wi) tensor.
+        :return rgb_output (B, Co, Hi, Wi) tensor.
+        '''
+        # rgb_input = (B, 3, 224, 288).
+        (rgb_output, last_hidden_state) = self.backbone(rgb_input)
+        # rgb_output = (B, Co, Hi, Wi) = (B, 3, 224, 288).
+        # last_hidden_state = (B, N, D) ???
 
-        (y, _) = self.backbone(x)
-
-        return y
+        return rgb_output

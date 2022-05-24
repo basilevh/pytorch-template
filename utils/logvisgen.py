@@ -152,7 +152,7 @@ class Logger:
             wandb.log({key: wandb.Histogram(value)}, step=step)
 
     def save_image(self, image, step=None, file_name=None, online_name=None, caption=None,
-                   upscale_factor=2, accumulate_online=16):
+                   upscale_factor=2, accumulate_online=8):
         '''
         Records a single image to a file in visuals and/or the online dashboard.
         '''
@@ -185,7 +185,7 @@ class Logger:
                       step=step)
 
     def save_video(self, frames, step=None, file_name=None, online_name=None, caption=None, fps=6,
-                   accumulate_online=16):
+                   accumulate_online=8):
         '''
         Records a single set of frames as a video to a file in visuals and/or the online dashboard.
         '''
@@ -208,7 +208,7 @@ class Logger:
                 self.accum_video_buffer[online_name] = []
 
     def save_gallery(self, frames, step=None, file_name=None, online_name=None, caption=None,
-                     upscale_factor=1, accumulate_online=16):
+                     upscale_factor=1, accumulate_online=8):
         '''
         Records a single set of frames as a gallery image to a file in visuals and/or the online
         dashboard.

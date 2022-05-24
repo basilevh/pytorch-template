@@ -100,8 +100,10 @@ def train_args():
                         help='Which optimizer to use for training (sgd / adam / adamw / lamb).')
 
     # Model options.
-    parser.add_argument('--image_dim', default=224, type=int,
-                        help='Size of any entire image after data transforms.')
+    parser.add_argument('--image_height', default=224, type=int,
+                        help='Vertical size of any entire image after data transforms.')
+    parser.add_argument('--image_width', default=288, type=int,
+                        help='Horizontal size of any entire image after data transforms.')
     
     # Loss options.
     parser.add_argument('--l1_lw', default=0.5, type=float,

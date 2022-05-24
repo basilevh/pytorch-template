@@ -16,14 +16,14 @@ class MyLogger(logvisgen.Logger):
     def __init__(self, args, context):
         if 'batch_size' in args:
             if args.is_debug:
-                self.step_interval = 80 // args.batch_size
+                self.step_interval = 64 // args.batch_size
             else:
-                self.step_interval = 3200 // args.batch_size
+                self.step_interval = 512 // args.batch_size
         else:
             if args.is_debug:
-                self.step_interval = 20
+                self.step_interval = 16
             else:
-                self.step_interval = 200
+                self.step_interval = 128
         super().__init__(args.log_path, context)
 
     def handle_train_step(self, epoch, phase, cur_step, total_step, steps_per_epoch,

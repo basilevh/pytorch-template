@@ -100,7 +100,7 @@ def perform_inference(data_retval, networks, device, logger, all_args):
         # Update lists to keep.
         all_psnr.append(psnr)
 
-    # Organize and return relevant info.
+    # Organize and return relevant info, converting results to numpy as needed.
     inference_retval = dict()
     inference_retval['rgb_input'] = rgb_input  # (B, H, W, C).
     inference_retval['rgb_output'] = rgb_output  # (B, H, W, C).

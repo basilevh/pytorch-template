@@ -98,7 +98,7 @@ def _train_one_epoch(args, train_pipeline, networks_nodp, phase, epoch, optimize
         logger.handle_train_step(epoch, phase, cur_step, total_step, steps_per_epoch,
                                  data_retval, model_retval, loss_retval, args)
 
-        if cur_step >= 200 and args.is_debug:
+        if cur_step >= 512 and args.is_debug:
             logger.warning('Cutting epoch short for debugging...')
             break
 
@@ -175,6 +175,10 @@ def main(args, logger):
     # Instantiate networks.
     networks = dict()
     backbone_args = dict()
+    backbone_args['image_height'] = args.image_height
+    backbone_args['image_width'] = args.image_width
+    backbone_args['in_channels'] = 3
+    backbone_args['out_channels'] = 3
     
     # backbone_net = model.MyModel(logger, **backbone_args)
     backbone_net = model.MyDenseVitModel(logger, **backbone_args)

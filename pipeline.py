@@ -63,7 +63,9 @@ class MyTrainPipeline(torch.nn.Module):
         # Run model.
         rgb_output = self.networks['backbone'](rgb_input)
 
+        # Organize and return relevant info.
         model_retval = dict()
+        model_retval['rgb_input'] = rgb_input
         model_retval['rgb_output'] = rgb_output
 
         loss_retval = self.losses.per_example(data_retval, model_retval)
