@@ -125,7 +125,7 @@ class MyImageDataset(torch.utils.data.Dataset):
         self.all_files = all_files
         self.file_count = file_count
         self.dset_size = dset_size
-        self.force_shuffle = (use_data_frac < 1.0)
+        self.force_shuffle = (use_data_frac < 1.0 and 'test' not in phase)
 
     def __len__(self):
         return int(self.dset_size * self.use_data_frac)
