@@ -33,7 +33,7 @@ class MyLogger(logvisgen.Logger):
 
         if cur_step % self.step_interval == 0:
 
-            batch_size = model_retval['rgb_input'].shape[0]
+            batch_size = data_retval['rgb_input'].shape[0]
             total_loss = loss_retval['total']
             loss_l1 = loss_retval['l1']
 

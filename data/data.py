@@ -139,7 +139,7 @@ class MyImageDataset(torch.utils.data.Dataset):
 
         # Apply transforms.
         if self.transform is not None:
-            rgb_input = self.src_transform(rgb_input)
+            rgb_input = self.transform(rgb_input)
 
         # Obtain ground truth.
         rgb_target = 1.0 - rgb_input

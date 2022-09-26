@@ -6,7 +6,7 @@ from __init__ import *
 
 # Internal imports.
 import my_utils
-import perceiver
+# import perceiver
 import vision_tf
 
 

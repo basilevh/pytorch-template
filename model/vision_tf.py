@@ -15,9 +15,6 @@ import sys
 import timm
 
 # Internal imports.
-sys.path.append(os.getcwd())
-sys.path.append(os.path.join(os.getcwd(), 'third_party/'))
-sys.path.append(os.path.join(os.getcwd(), 'third_party/VFS/'))
 from timesformer.models.vit import TimeSformer
 
 

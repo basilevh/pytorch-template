@@ -17,15 +17,18 @@
             "request": "launch",
             "program": "${workspaceFolder}/train.py",
             "env": {
-              "CUDA_VISIBLE_DEVICES": "0,1,2,3",
+              "CUDA_VISIBLE_DEVICES": "0",
             },
             "args": [
                 "--name",
                 "d1",
                 "--data_path",
-                "/proj/vondrick/datasets/ImageNet-ILSVRC2012/",
+                // "/proj/vondrick/datasets/ImageNet-ILSVRC2012/",
+                "C:\\Development\\CVR Data\\DIV2K_valid_crop_down",
                 "--batch_size",
-                "32",
+                "4",
+                "--num_workers",
+                "4",
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/",
@@ -50,5 +53,5 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}/",
         },
-    ]
+    ],
 }

@@ -20,6 +20,8 @@ import my_utils
 def _get_learning_rate(optimizer):
     if isinstance(optimizer, dict):
         optimizer = my_utils.any_value(optimizer)
+    if optimizer is None:
+        return -1.0
     for param_group in optimizer.param_groups:
         return param_group['lr']
 
@@ -175,7 +177,7 @@ def main(args, logger):
     # Instantiate networks.
     networks = dict()
     backbone_args = dict()
-    backbone_net = model.MyModel(logger, **backbone_args)
+    backbone_net = model.MySimpleModel(logger, **backbone_args)
     networks['backbone'] = backbone_net
 
     # Bundle networks into a list.
