@@ -1,6 +1,6 @@
 # pytorch-template
 
-My personal starting point for a computer vision deep learning project. It tries to automate the general structure of your codebase to some degree, such that you can spend your time dealing mostly with filling in the "content" of logging, visualizations, data loaders, network architecture, etc..
+My personal starting point for a computer vision deep learning project. It tries to automate the general structure of your codebase to some degree, such that you can spend your time dealing mostly with filling in the "content" of data loaders, visualizations, network architectures, logging, etc. rather than boilerplate code.
 
 ## Notes
 
