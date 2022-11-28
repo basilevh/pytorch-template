@@ -1,7 +1,4 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
@@ -9,15 +6,23 @@
             "type": "python",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "env": {
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                "WANDB_API_KEY": "bla",
+            },
         },
         {
             "name": "train_dbg",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/train.py",
+            "cwd": "${workspaceFolder}/",
+            "console": "integratedTerminal",
             "env": {
-              "CUDA_VISIBLE_DEVICES": "0",
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                "WANDB_API_KEY": "bla",
             },
             "args": [
                 "--name",
@@ -30,14 +35,18 @@
                 "--num_workers",
                 "4",
             ],
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}/",
         },
         {
             "name": "test_dbg",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/test.py",
+            "cwd": "${workspaceFolder}/",
+            "console": "integratedTerminal",
+            "env": {
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                "WANDB_API_KEY": "bla",
+            },
             "args": [
                 "--resume",
                 "d1",
@@ -50,8 +59,6 @@
                 "--data_path",
                 "/proj/vondrick/datasets/ImageNet-ILSVRC2012/test/",
             ],
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}/",
         },
     ],
 }

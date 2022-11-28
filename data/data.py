@@ -19,37 +19,43 @@ def _seed_worker(worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
+    np.set_printoptions(precision=3, suppress=True)
+    torch.set_printoptions(precision=3, sci_mode=False)
+
 
 def create_train_val_data_loaders(args, logger):
     '''
     return (train_loader, val_aug_loader, val_noaug_loader, dset_args).
     '''
+    actual_data_paths = args.data_path
+    assert isinstance(actual_data_paths, list)
 
     # TODO: Figure out noaug val dataset args as well.
-    my_transform = augs.get_train_transform(args.image_dim)
     dset_args = dict()
-    dset_args['transform'] = my_transform
     dset_args['use_data_frac'] = args.use_data_frac
 
-    train_dataset = MyImageDataset(
-        args.data_path, logger, 'train', **dset_args)
-    val_aug_dataset = MyImageDataset(
-        args.data_path, logger, 'val', **dset_args) \
+    cur_data_path = actual_data_paths[0]
+
+    train_dset = MyImageDataset(
+        cur_data_path, logger, 'train', **dset_args)
+    val_aug_dset = MyImageDataset(
+        cur_data_path, logger, 'val', **dset_args) \
         if args.do_val_aug else None
-    val_noaug_dataset = MyImageDataset(
-        args.data_path, logger, 'val', **dset_args) \
+    val_noaug_dset = MyImageDataset(
+        cur_data_path, logger, 'val', **dset_args) \
         if args.do_val_noaug else None
 
+    shuffle = True
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, num_workers=args.num_workers,
-        shuffle=True, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False)
+        train_dset, batch_size=args.batch_size, num_workers=args.num_workers,
+        shuffle=shuffle, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False)
     val_aug_loader = torch.utils.data.DataLoader(
-        val_aug_dataset, batch_size=args.batch_size, num_workers=args.num_workers,
-        shuffle=True, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False) \
+        val_aug_dset, batch_size=args.batch_size, num_workers=args.num_workers,
+        shuffle=shuffle, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False) \
         if args.do_val_aug else None
     val_noaug_loader = torch.utils.data.DataLoader(
-        val_noaug_dataset, batch_size=args.batch_size, num_workers=args.num_workers,
-        shuffle=True, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False) \
+        val_noaug_dset, batch_size=args.batch_size, num_workers=args.num_workers,
+        shuffle=shuffle, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False) \
         if args.do_val_noaug else None
 
     return (train_loader, val_aug_loader, val_noaug_loader, dset_args)
@@ -59,19 +65,25 @@ def create_test_data_loader(train_args, test_args, train_dset_args, logger):
     '''
     return (test_loader, test_dset_args).
     '''
+    actual_data_paths = test_args.data_path
+    assert isinstance(actual_data_paths, list)
 
-    my_transform = augs.get_test_transform(train_args.image_dim)
+    # Due to the nature of testing, we will simply use ConcatDataset instead of MixedDataset here
+    # when there are multiple data sources.
+    # NOTE: Only the last test_dset_args of each source in the list is remembered and returned.
+    # test_dset_list = []
+
+    cur_data_path = test_args.data_path[0]
 
     test_dset_args = copy.deepcopy(train_dset_args)
-    test_dset_args['transform'] = my_transform
     test_dset_args['use_data_frac'] = test_args.use_data_frac
 
-    test_dataset = MyImageDataset(
-        test_args.data_path, logger, 'test', **test_dset_args)
+    test_dset = MyImageDataset(
+        cur_data_path, logger, 'test', **test_dset_args)
 
     test_loader = torch.utils.data.DataLoader(
-        test_dataset, batch_size=test_args.batch_size, num_workers=test_args.num_workers,
-        shuffle=False, worker_init_fn=_seed_worker, drop_last=True, pin_memory=False)
+        test_dset, batch_size=test_args.batch_size, num_workers=test_args.num_workers,
+        shuffle=False, worker_init_fn=_seed_worker, drop_last=False, pin_memory=False)
 
     return (test_loader, test_dset_args)
 
@@ -82,12 +94,11 @@ class MyImageDataset(torch.utils.data.Dataset):
     dataset.
     '''
 
-    def __init__(self, dataset_root, logger, phase, transform=None, use_data_frac=1.0):
+    def __init__(self, dataset_root, logger, phase, use_data_frac=1.0):
         '''
         :param dataset_root (str): Path to dataset (with or without phase).
         :param logger (MyLogger).
         :param phase (str): train / val_aug / val_noaug / test.
-        :param transform: Data transform to apply on every image.
         '''
         # Get root and phase directories.
         phase_dir = os.path.join(dataset_root, phase)
@@ -100,7 +111,7 @@ class MyImageDataset(torch.utils.data.Dataset):
         # Load all file paths beforehand.
         # NOTE: This method call handles subdirectories recursively, but also creates extra files.
         all_files = data_utils.cached_listdir(phase_dir, allow_exts=['jpg', 'jpeg', 'png'],
-                                         recursive=True)
+                                              recursive=True)
         file_count = len(all_files)
         print('Image file count:', file_count)
         dset_size = file_count
@@ -109,7 +120,7 @@ class MyImageDataset(torch.utils.data.Dataset):
         self.logger = logger
         self.phase = phase
         self.phase_dir = phase_dir
-        self.transform = transform
+        self.transform = None
         self.all_files = all_files
         self.file_count = file_count
         self.dset_size = dset_size

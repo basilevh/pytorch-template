@@ -4,6 +4,9 @@ Objective functions.
 
 from __init__ import *
 
+# Internal imports.
+import metrics
+
 
 class MyLosses():
     '''
@@ -25,46 +28,35 @@ class MyLosses():
         loss_l1 = self.l1_loss(rgb_output, rgb_target)
         return loss_l1
 
-    def per_example(self, data_retval, model_retval):
+    def per_example(self, data_retval, model_retval, progress, metrics_only):
         '''
         Loss calculations that *can* be performed independently for each example within a batch.
         :param data_retval (dict): Data loader elements.
         :param model_retval (dict): All network output information.
+        :param progress (float) in [0, 1]: Total progress within the entire training run.
+        :param metrics_only (bool).
         :return loss_retval (dict): Preliminary loss information.
         '''
         (B, H, W, _) = data_retval['rgb_input'].shape
 
-        loss_l1 = []
-
-        # OPTIONAL:
-        # Loop over every example.
-        # for i in range(B):
-
-        #     rgb_input = data_retval['rgb_input'][i:i + 1]
-        #     rgb_output = model_retval['rgb_output'][i:i + 1]
-        #     rgb_target = data_retval['rgb_target'][i:i + 1]
-
-        #     # Calculate loss terms.
-        #     cur_l1 = self.my_l1_loss(rgb_output, rgb_target)
-            
-        #     # Update lists.
-        #     if self.train_args.l1_lw > 0.0:
-        #         loss_l1.append(cur_l1)
-
-        # # Average & return losses + other informative metrics across batch size within this GPU.
-        # loss_l1 = torch.mean(torch.stack(loss_l1)) if self.train_args.l1_lw > 0.0 else None
-
-        # PREFERRED:
-        # Evaluate entire subbatch for efficiency.
-        rgb_output = model_retval['rgb_output']
-        rgb_target = data_retval['rgb_target']
+        if metrics_only:
+            # Calculate only evaluation metrics and nothing else.
+            metrics_retval = metrics.calculate_metrics_for(data_retval, model_retval)
+            loss_retval = dict()
+            loss_retval['metrics'] = metrics_retval
+            return loss_retval
         
-        # Update loss terms.
+        # Evaluate entire subbatch for efficiency.
+        rgb_target = data_retval['rgb_target']
+        rgb_output = model_retval['rgb_output']
+        
+        loss_l1 = None
+        
         if self.train_args.l1_lw > 0.0:
             loss_l1 = self.my_l1_loss(rgb_output, rgb_target)
-
-        else:
-            loss_l1 = None
+        
+        # Calculate preliminary evaluation metrics.
+        metrics_retval = metrics.calculate_metrics_for(data_retval, model_retval)
         
         # OPTIONAL:
         # Delete memory-taking stuff before aggregating across GPUs.
@@ -73,40 +65,89 @@ class MyLosses():
         # Return results.
         loss_retval = dict()
         loss_retval['l1'] = loss_l1
+        loss_retval['metrics'] = metrics_retval
         return loss_retval
 
-    def entire_batch(self, data_retval, model_retval, loss_retval, epoch_frac):
+    def entire_batch(self, data_retval, model_retval, loss_retval, cur_step, total_step, epoch,
+                     progress):
         '''
         Loss calculations that *cannot* be performed independently for each example within a batch.
         :param data_retval (dict): Data loader elements.
         :param model_retval (dict): All network output information.
         :param loss_retval (dict): Preliminary loss information (per-example, but not batch-wide).
-        :param epoch_frac (float): Current epoch (0-based) divided by total number of epochs.
+        :param progress (float) in [0, 1]: Total progress within the entire training run.
         :return loss_retval (dict): All loss information.
         '''
+        # For debugging:
+        old_loss_retval = loss_retval.copy()
+        old_loss_retval['metrics'] = loss_retval['metrics'].copy()
 
-        # Average all terms across batch size.
-        for (k, v) in loss_retval.items():
-            if torch.is_tensor(v):
-                loss_retval[k] = torch.mean(v)
-            elif v is None:
-                loss_retval[k] = 0.0
+        if not('test' in self.phase):
+            # Log average value per epoch at train / val time.
+            key_prefix = self.phase + '/'
+            report_kwargs = dict(remember=True)
+        else:
+            # Log & plot every single step at test time.
+            key_prefix = ''
+            report_kwargs = dict(step=cur_step)
 
-        # Obtain total loss. 
-        loss_total = loss_retval['l1'] * self.train_args.l1_lw
-        
-        # Convert loss terms (just not the total) to floats for logging.
-        for (k, v) in loss_retval.items():
-            if torch.is_tensor(v):
-                loss_retval[k] = v.item()
+        if len(loss_retval.keys()) >= 2:  # Otherwise, assume we had metrics_only enabled.
 
-        # Report all loss values.
-        self.logger.report_scalar(
-            self.phase + '/loss_total', loss_total.item(), remember=True)
-        self.logger.report_scalar(
-            self.phase + '/loss_l1', loss_retval['l1'], remember=True)
+            # Average all loss values across batch size.
+            for (k, v) in loss_retval.items():
+                if not('metrics' in k):
+                    if torch.is_tensor(v):
+                        loss_retval[k] = torch.mean(v)
+                    elif v is None:
+                        loss_retval[k] = -1.0
+                    else:
+                        raise RuntimeError(f'loss_retval: {k}: {v}')
 
-        # Return results, i.e. append to the existing loss_retval dictionary.
-        # Total losses are the only entries that are tensors, not just floats.
-        loss_retval['total'] = loss_total
+            # Obtain total loss per network.
+            loss_total = loss_retval['l1'] * self.train_args.l1_lw
+
+            # Convert loss terms (just not the total) to floats for logging.
+            for (k, v) in loss_retval.items():
+                if torch.is_tensor(v):
+                    loss_retval[k] = v.item()
+
+            # Report all loss values.
+            self.logger.report_scalar(
+                key_prefix + 'loss_total', loss_total.item(), **report_kwargs)
+            if self.train_args.l1_lw > 0.0:
+                self.logger.report_scalar(
+                    key_prefix + 'loss_l1', loss_retval['l1'], **report_kwargs)
+
+            # Return results, i.e. append new stuff to the existing loss_retval dictionary.
+            # Total losses are the only entries that are tensors, not just floats.
+            # Later in train.py, we will match the appropriate optimizer (and thus network parameter
+            # updates) to each accumulated loss value as indicated by the keys here.
+            loss_retval['total'] = loss_total
+
+        # Weighted average all metrics across batch size.
+        # TODO DRY: This is also in metrics.py.
+        for (k, v) in loss_retval['metrics'].items():
+            if 'count' in k:
+                count_key = k
+                mean_key = k.replace('count', 'mean')
+                short_key = k.replace('count_', '')
+                old_counts = loss_retval['metrics'][count_key]
+                old_means = loss_retval['metrics'][mean_key]
+
+                # NOTE: Some mean values will be -1.0 but then corresponding counts are always 0.
+                new_count = old_counts.sum().item()
+                if new_count > 0:
+                    new_mean = (old_means * old_counts).sum().item() / (new_count + 1e-7)
+                else:
+                    new_mean = -1.0
+                loss_retval['metrics'][count_key] = new_count
+                loss_retval['metrics'][mean_key] = new_mean
+
+                # Report all metrics, but ignore invalid values (e.g. when no occluded or contained
+                # stuff exists). At train time, we maintain correct proportions with the weight
+                # option. At test time, we log every step anyway, so this does not matter.
+                if new_count > 0:
+                    self.logger.report_scalar(key_prefix + short_key, new_mean, weight=new_count,
+                                              **report_kwargs)
+
         return loss_retval

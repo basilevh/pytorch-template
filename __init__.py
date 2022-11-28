@@ -9,6 +9,8 @@ import collections.abc
 import copy
 import cv2
 import imageio
+import itertools
+import matplotlib.colors
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 import numpy as np
@@ -38,6 +40,7 @@ import torchvision.transforms
 import torchvision.utils
 import tqdm
 import warnings
+from collections import defaultdict
 from einops import rearrange, repeat
 
 PROJECT_NAME = 'my-project-template'
@@ -46,4 +49,19 @@ sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'data/'))
 sys.path.append(os.path.join(os.getcwd(), 'eval/'))
 sys.path.append(os.path.join(os.getcwd(), 'model/'))
+sys.path.append(os.path.join(os.getcwd(), 'third_party/'))
 sys.path.append(os.path.join(os.getcwd(), 'utils/'))
+
+
+# Quick functions for usage during debugging:
+
+def mmm(x):
+    return (x.min(), x.mean(), x.max())
+
+
+def st(x):
+    return (x.dtype, x.shape)
+
+
+def stmmm(x):
+    return (*st(x), *mmm(x))
