@@ -5,6 +5,8 @@ logs/
 logs_*/
 wandb/
 *.egg-info
+pretrained/*.pyth
+*.lnk
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
