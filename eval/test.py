@@ -66,6 +66,7 @@ def _test_outer(all_args, networks, device, logger):
     '''
     :param all_args (dict): train, test, train_dset, test_dset, model.
     '''
+    logger.info(f'Start outer test loop of {all_args["test"].name}...')
     outer_start_time = time.time()
 
     for net in networks.values():

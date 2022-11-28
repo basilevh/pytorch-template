@@ -133,7 +133,7 @@ class MyImageDataset(torch.utils.data.Dataset):
 
         # https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
         manager = mp.Manager()
-        scene_dps = manager.list(scene_dps)
+        image_fps = manager.list(image_fps)
 
         # Instantiate custom augmentation pipeline.
         # Define color and final resize transforms.
@@ -196,9 +196,7 @@ class MyImageDataset(torch.utils.data.Dataset):
         '''
         :return data_retval (dict).
         '''
-        (raw_image, success) = data_utils.read_image_robust(image_fp)
-        if not(success):
-            raise RuntimeError(f'Failed to properly load image: {image_fp}')
+        (raw_image, _) = data_utils.read_image_robust(image_fp, no_fail=True)
 
         raw_image = self.to_tensor(raw_image / 255.0)  # (H, W, 3) array -> (3, H, W) tensor.
         raw_image = raw_image.type(torch.float32)
@@ -232,4 +230,4 @@ class MyImageDataset(torch.utils.data.Dataset):
         data_retval['rgb_input'] = rgb_input  # (3, H, W).
         data_retval['rgb_target'] = rgb_target  # (3, H, W).
 
-        return raw_image
+        return data_retval

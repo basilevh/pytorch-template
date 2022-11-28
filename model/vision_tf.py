@@ -33,12 +33,13 @@ class DenseVisionTransformer(torch.nn.Module):
     Based on https://github.com/rwightman/pytorch-image-models.
     '''
 
-    def __init__(self, logger, timm_name, pretrained_frozen, frame_height, frame_width, patch_dim,
-                 in_channels):
+    def __init__(self, logger, timm_name, pretrained, pretrained_path, frame_height, frame_width,
+                 patch_dim, in_channels):
         super().__init__()
         self.logger = logger
         self.timm_name = timm_name
-        self.pretrained = pretrained_frozen
+        self.pretrained = pretrained
+        self.pretrained_path = pretrained_path
         # Frame size.
         self.Hf = frame_height
         self.Wf = frame_width
@@ -52,23 +53,16 @@ class DenseVisionTransformer(torch.nn.Module):
         self.Ci = in_channels
 
         # NOTE: We are usually modifying the image size which results in a different token sequence
-        # length and set of positional embeddings. Not sure what the effect is.
-        self.vit = timm.create_model(timm_name, pretrained=pretrained_frozen,
-                                     img_size=(self.Hf, self.Wf))
-        assert self.ho == 16 and self.wo == 16
-        self.output_feature_dim = 768
-
-        if pretrained_frozen:
-            # Disable gradients for target features.
-            # NOTE: used_model must always be set to eval, regardless of this model phase.
-            for param in self.vit.parameters():
-                param.requires_grad_(False)
+        # length and set of positional embeddings. Not sure what the effect is with pretrained.
+        # https://huggingface.co/docs/timm/index#load-a-pretrained-model
+        self.vit = timm.create_model(
+            timm_name, pretrained=pretrained, img_size=(self.Hf, self.Wf), num_classes=0)
+        self.output_feature_dim = self.vit.embed_dim
 
         # Replace first convolutional layer to accommodate non-standard inputs.
         if in_channels != 3:
-            assert not(pretrained_frozen)
             self.vit.patch_embed.proj = torch.nn.Conv2d(
-                in_channels=in_channels, out_channels=768, kernel_size=(16, 16), stride=(16, 16))
+                in_channels=in_channels, out_channels=768, kernel_size=(self.ho, self.wo), stride=(self.ho, self.wo))
 
     def forward(self, input_pixels):
         '''
@@ -113,12 +107,12 @@ class DenseTimeSformer(torch.nn.Module):
     Based on https://github.com/facebookresearch/TimeSformer.
     '''
 
-    def __init__(self, logger, pretrained_frozen, pretrained_path, frame_height, frame_width,
+    def __init__(self, logger, pretrained, pretrained_path, frame_height, frame_width,
                  patch_dim, in_channels, num_frames, attention_type, causal_attention,
                  norm_embeddings, drop_path_rate, network_depth):
         super().__init__()
         self.logger = logger
-        self.pretrained = pretrained_frozen
+        self.pretrained = pretrained
         # Frame size.
         self.Hf = frame_height
         self.Wf = frame_width
@@ -260,10 +254,11 @@ class MyDenseVisionTransformerBackbone(DenseVisionTransformer):
     Trainable variant of the DenseVisionTransformer.
     '''
 
-    def __init__(self, logger, frame_height=224, frame_width=224, in_channels=3):
+    def __init__(self, logger, frame_height=224, frame_width=224, patch_dim=16, in_channels=3,
+                 pretrained=False, pretrained_path=''):
         # TODO: Currently hardcoded to vit_base_patch16_224.
-        super().__init__(logger, 'vit_base_patch16_224', False, frame_height, frame_width,
-                         16, in_channels)
+        super().__init__(logger, 'vit_base_patch16_224', pretrained, pretrained_path, frame_height,
+                         frame_width, patch_dim, in_channels)
 
 
 class MyDenseTimeSformerBackbone(DenseTimeSformer):

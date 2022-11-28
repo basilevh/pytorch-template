@@ -117,9 +117,9 @@ def train_args():
     # General data options.
     parser.add_argument('--num_frames', default=24, type=int,
                         help='Video clip length.')
-    parser.add_argument('--image_height', default=224, type=int,
+    parser.add_argument('--image_height', default=192, type=int,
                         help='Vertical size of any entire post-processed image.')
-    parser.add_argument('--image_width', default=288, type=int,
+    parser.add_argument('--image_width', default=256, type=int,
                         help='Horizontal size of any entire post-processed image.')
 
     # Model / architecture options.
@@ -177,19 +177,14 @@ def verify_args(args, is_train=False):
     args.is_debug = args.name.startswith('d')
 
     args.wandb_group = ('train' if is_train else 'test') + \
-        ('_single' if args.single_scene else '') + \
-        ('_debug' if args.is_debug or args.is_figs else '')
+        ('_debug' if args.is_debug else '')
 
     if is_train:
-        
         pass
 
     else:
-
         # Not supporting batches at test time simplifies things.
         args.batch_size = 1
-
-
 
     if args.num_workers < 0:
         if is_train:

@@ -139,7 +139,7 @@ def _train_all_epochs(args, train_pipeline, networks_nodp, optimizers, lr_schedu
                       train_loader, val_aug_loader, val_noaug_loader, device, logger,
                       checkpoint_fn):
 
-    logger.info('Start training loop...')
+    logger.info(f'Start training loop of {args.name}...')
     start_time = time.time()
 
     for epoch in range(start_epoch, args.num_epochs):
@@ -206,6 +206,7 @@ def main(args, logger):
     backbone_args['image_width'] = args.image_width
     backbone_args['in_channels'] = 3
     backbone_args['out_channels'] = 3
+    backbone_args['pretrained'] = True
     
     # backbone_net = model.MySimpleModel(logger, **backbone_args)
     backbone_net = model.MyDenseVitModel(logger, **backbone_args)

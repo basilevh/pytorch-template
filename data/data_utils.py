@@ -236,14 +236,23 @@ def read_image_robust(img_path, no_fail=False):
     crashing.
     '''
     try:
-        image = plt.imread(img_path).copy()
+        image = plt.imread(img_path).copy()  # (H, W) or (H, W, 3) array of uint8.
         success = True
+        
+        if image.ndim == 2:
+            image = np.stack([image] * 3, axis=-1)
+        elif image.shape[2] == 1:
+            image = np.stack([image[..., 0]] * 3, axis=-1)
+        elif image.shape[2] == 4:
+            image = image[..., 0:3]
+        
         if (image.ndim != 3 or image.shape[2] != 3
                 or np.any(np.array(image.strides) < 0)):
             # Either not RGB or has negative stride, so discard.
             success = False
             if no_fail:
                 raise RuntimeError(f'ndim: {image.ndim}  '
+                                   f'dtype: {image.dtype}  '
                                    f'shape: {image.shape}  '
                                    f'strides: {image.strides}')
 
@@ -254,7 +263,7 @@ def read_image_robust(img_path, no_fail=False):
         if no_fail:
             raise e
 
-    return image, success
+    return (image, success)
 
 
 def pad_div_numpy(div_array, axes, max_size):

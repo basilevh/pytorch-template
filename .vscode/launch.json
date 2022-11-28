@@ -9,7 +9,6 @@
             "console": "integratedTerminal",
             "env": {
                 "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
-                "WANDB_API_KEY": "bla",
             },
         },
         {
@@ -21,20 +20,19 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
+                "CUDA_VISIBLE_DEVICES": "1",
                 "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
-                "WANDB_API_KEY": "bla",
             },
             "args": [
                 "--name",
-                "d2",
+                "d3",
                 "--data_path",
                 "/proj/vondrick/datasets/ImageNet-ILSVRC2012/",
                 // "C:\\Development\\CVR Data\\DIV2K_valid_crop_down",
                 "--batch_size",
-                "4",
+                "64",
                 "--num_workers",
-                "4",
+                "24",
             ],
         },
         {
@@ -47,7 +45,6 @@
             "justMyCode": true,
             "env": {
                 "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
-                "WANDB_API_KEY": "bla",
             },
             "args": [
                 "--resume",

@@ -15,9 +15,6 @@ import vision_tf
 
 
 class MySimpleModel(torch.nn.Module):
-    '''
-    X
-    '''
 
     def __init__(self, logger):
         '''
@@ -40,16 +37,20 @@ class MySimpleModel(torch.nn.Module):
 
 class MyDenseVitModel(torch.nn.Module):
 
-    def __init__(self, logger, image_height, image_width, in_channels, out_channels):
+    def __init__(self, logger, image_height, image_width, in_channels, out_channels, pretrained):
+        '''
+        X
+        '''
         super().__init__()
         self.logger = logger
         self.image_height = image_height
         self.image_width = image_width
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.pretrained = pretrained
 
         self.backbone = vision_tf.MyDenseVisionTransformerBackbone(
-            logger, image_height, image_width, in_channels)
+            logger, image_height, image_width, 16, in_channels, pretrained, '')
 
         self.post_proj = torch.nn.Linear(self.backbone.output_feature_dim,
             self.backbone.ho * self.backbone.wo * self.out_channels)

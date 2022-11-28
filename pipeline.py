@@ -67,15 +67,17 @@ class MyTrainPipeline(torch.nn.Module):
 
         # Retrieve data.
         rgb_input = data_retval['rgb_input']
+        rgb_target = data_retval['rgb_target']
         rgb_input = rgb_input.to(self.device)
+        rgb_target = rgb_target.to(self.device)
 
         # Run model.
-        rgb_output = self.networks['backbone'](rgb_input)
+        rgb_output = self.networks['backbone'](rgb_input)  # (3, H, W).
 
         # Organize and return relevant info.
         model_retval = dict()
-        model_retval['rgb_target'] = 1.0 - rgb_input
-        model_retval['rgb_output'] = rgb_output
+        model_retval['rgb_target'] = rgb_target  # (3, H, W).
+        model_retval['rgb_output'] = rgb_output  # (3, H, W).
 
         if include_loss:
             loss_retval = self.losses.per_example(data_retval, model_retval, progress, metrics_only)

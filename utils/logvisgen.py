@@ -271,8 +271,10 @@ class Logger:
             if self.initialized:
                 if online_name not in self.accum_buffer_dict:
                     self.accum_buffer_dict[online_name] = self.mp_manager.list()
-                self.accum_buffer_dict[online_name].append(wandb.Image(image, caption=caption))
-                self._handle_buffer_dicts(online_name, step, accumulate_online, step)
+                self.accum_buffer_dict[online_name].append(
+                    wandb.Image(image, caption=caption))
+                if not(defer_log):
+                    self._handle_buffer_dicts(online_name, accumulate_online, step)
             else:
                 self.debug('save_image: wandb not initialized')
 

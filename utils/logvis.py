@@ -18,15 +18,11 @@ class MyLogger(logvisgen.Logger):
         if 'batch_size' in args:
             if args.is_debug:
                 self.step_interval = max(16 // args.batch_size, 2)
-            elif args.single_scene:
-                self.step_interval = max(32 // args.batch_size, 2)
             else:
                 self.step_interval = max(64 // args.batch_size, 2)
         else:
             if args.is_debug:
                 self.step_interval = 4
-            elif args.single_scene:
-                self.step_interval = 8
             else:
                 self.step_interval = 16
         self.half_step_interval = self.step_interval // 2
@@ -50,33 +46,85 @@ class MyLogger(logvisgen.Logger):
                 ('test' in phase)):
             return
 
-        file_name_suffix = ''
+        file_idx = data_retval['file_idx'][0].item()
 
-        # TODO async etc
+        # Obtain friendly short name for this step for logging, video saving, and CSV export.
+        if not('test' in phase):
+            file_name_suffix = ''
+            file_name_suffix += f'e{epoch}_p{phase}_s{cur_step}_{file_idx}'
 
-        total_loss = loss_retval['total']
-        loss_l1 = loss_retval['l1']
+        else:
+            file_name_suffix = ''
+            file_name_suffix += f's{cur_step}_{file_idx}'
 
-        # Print metrics in console.
-        self.info(f'[Step {cur_step} / {steps_per_epoch}]  '
-                  f'total_loss: {total_loss:.3f}  '
-                  f'loss_l1: {loss_l1:.3f}')
+        # Log informative line including loss values & metrics in console.
+        to_print = f'[Step {cur_step} / {steps_per_epoch}]  f: {file_idx}  '
 
-        # Save input, prediction, and ground truth images.
-        rgb_input = data_retval['rgb_input'][0].permute(1, 2, 0).detach().cpu().numpy()
-        rgb_output = model_retval['rgb_output'][0].permute(1, 2, 0).detach().cpu().numpy()
-        rgb_target = 1.0 - rgb_input
+        # NOTE: All wandb stuff for reporting scalars is handled in loss.py.
+        # Assume loss may be missing (e.g. at test time).
+        if loss_retval is not None:
+
+            if len(loss_retval.keys()) >= 2:
+                total_loss = loss_retval['total'].item()
+                loss_l1 = loss_retval['l1']
+                to_print += (f'tot: {total_loss:.3f}  '
+                             f'l1: {loss_l1:.3f}  ')
+
+            # Assume metrics are always present (even if count = 0).
+            metrics_retval = loss_retval['metrics']
+
+        self.info(to_print)
+
+        # If log_rarely is active, then write stuff to disk much less often, after printing info.
+        log_rarely = (0 if 'test' in phase else train_args.log_rarely)
+        if log_rarely > 0 and cur_step % (self.step_interval * 16) != self.step_interval * 8:
+            return file_name_suffix
 
         temp_st = time.time()  # DEBUG
-        
-        gallery = np.stack([rgb_input, rgb_output, rgb_target])
-        gallery = np.clip(gallery, 0.0, 1.0)
-        self.save_gallery(gallery, step=epoch,
-                          file_name=f'rgb_e{epoch}_p{phase}_s{cur_step}.png',
-                          online_name=f'rgb_p{phase}')
 
-        self.logger.debug(
-            f'logvis saving: {time.time() - temp_st:.3f}s')  # DEBUG
+        if model_retval is None:
+            return  # Stop early if data_loop_only.
+
+        # Save input, prediction, and ground truth data.
+        rgb_input = rearrange(data_retval['rgb_input'][0],
+                              'C H W -> H W C').detach().cpu().numpy()
+        rgb_output = rearrange(model_retval['rgb_output'][0],
+                               'C H W -> H W C').detach().cpu().numpy()
+        rgb_target = rearrange(model_retval['rgb_target'][0],
+                               'C H W -> H W C').detach().cpu().numpy()
+        
+        # self.logger.debug(
+        #     f'logvis tensor to cpu: {time.time() - temp_st:.3f}s')  # DEBUG
+        temp_st = time.time()  # DEBUG
+
+        # Create simple horizontal gallery.
+        vis_gal = np.concatenate([rgb_input, rgb_output, rgb_target], axis=1)
+        vis_gal = np.clip(vis_gal, 0.0, 1.0)
+        
+        # self.logger.debug(
+        #     f'logvis vis/gal creation total: {time.time() - temp_st:.3f}s')  # DEBUG
+        temp_st = time.time()  # DEBUG
+
+        if not('test' in phase):
+            wandb_step = epoch
+            accumulate_online = 8
+        else:
+            wandb_step = cur_step
+            accumulate_online = 1
+        
+        # NOTE: Without apply_async, this part would take by far the most time.
+        avoid_wandb = test_args.avoid_wandb if 'test' in phase else train_args.avoid_wandb
+        online_name = f'gal_p{phase}' if avoid_wandb == 0 else None
+        self.save_image(vis_gal, step=wandb_step,
+                        file_name=f'{file_name_suffix}_gal.png',
+                        online_name=online_name,
+                        caption=file_name_suffix,
+                        upscale_factor=2,
+                        accumulate_online=accumulate_online,
+                        apply_async=True)
+
+        # self.logger.debug(
+        #     f'logvis saving: {time.time() - temp_st:.3f}s')  # DEBUG
 
         return file_name_suffix
 
