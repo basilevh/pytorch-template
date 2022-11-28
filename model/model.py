@@ -2,11 +2,15 @@
 Neural network architecture description.
 '''
 
+import os
+import sys
+sys.path.insert(0, os.path.join(os.getcwd(), 'model/'))
+sys.path.insert(0, os.getcwd())
+
 from __init__ import *
 
 # Internal imports.
 import my_utils
-# import perceiver
 import vision_tf
 
 
@@ -67,32 +71,5 @@ class MyDenseVitModel(torch.nn.Module):
                                 h=self.backbone.ho, w=self.backbone.wo, C=self.out_channels)
         
         # rgb_output = (B, Co, Hi, Wi) = (B, 3, 224, 288).
-
-        return rgb_output
-
-
-class MyPerceiverModel(torch.nn.Module):
-
-    def __init__(self, logger, image_height, image_width, in_channels, out_channels):
-        super().__init__()
-        self.logger = logger
-        self.image_height = image_height
-        self.image_width = image_width
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-
-        self.backbone = perceiver.MyPerceiverBackbone(
-            logger, (image_height, image_width), in_channels, (image_height, image_width),
-            out_channels, -1, 'fourier')
-
-    def forward(self, rgb_input):
-        '''
-        :param rgb_input (B, Ci, Hi, Wi) tensor.
-        :return rgb_output (B, Co, Hi, Wi) tensor.
-        '''
-        # rgb_input = (B, 3, 224, 288).
-        (rgb_output, last_hidden_state) = self.backbone(rgb_input)
-        # rgb_output = (B, Co, Hi, Wi) = (B, 3, 224, 288).
-        # last_hidden_state = (B, N, D) ???
 
         return rgb_output

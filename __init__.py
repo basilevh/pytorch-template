@@ -18,7 +18,6 @@ import os
 import pathlib
 import pickle
 import platform
-import pytorch3d
 import random
 import scipy
 import seaborn as sns
