@@ -226,10 +226,29 @@ class Logger:
             wandb.run.summary[key] = value
 
     def save_image(self, image, step=None, file_name=None, online_name=None, caption=None,
-                   upscale_factor=2, accumulate_online=6):
+                   upscale_factor=2, accumulate_online=6, apply_async=False, defer_log=False):
         '''
         Records a single image to a file in visuals and/or the online dashboard.
         '''
+        # Ensure before everything else that buffer exists.
+        if not(defer_log) and online_name is not None and online_name not in self.accum_buffer_dict:
+            self.accum_buffer_dict[online_name] = self.mp_manager.list()
+
+        if apply_async:
+            # Start this exact method in parallel.
+            kwargs = dict(
+                step=step, file_name=file_name, online_name=online_name, caption=caption,
+                upscale_factor=upscale_factor, accumulate_online=accumulate_online,
+                apply_async=False, defer_log=True)
+            mp.Process(target=_save_image_wrapper, args=(self, image), kwargs=kwargs).start()
+
+            # See save_video() for explanation.
+            if online_name is not None and self.initialized:
+                if self.initialized:
+                    self._handle_buffer_dicts(online_name, accumulate_online, step)
+            
+            return
+        
         if image.dtype in [np.float32, np.float64]:
             image = (image * 255.0).astype(np.uint8)
 
@@ -289,18 +308,12 @@ class Logger:
 
         if apply_async:
             # Start this exact method in parallel.
-            temp_st = time.time()  # DEBUG
-
             kwargs = dict(
                 step=step, file_name=file_name, online_name=online_name, caption=caption, fps=fps,
                 extensions=extensions, upscale_factor=upscale_factor,
                 accumulate_online=accumulate_online, apply_async=False, defer_log=True)
             mp.Process(target=_save_video_wrapper, args=(self, frames), kwargs=kwargs).start()
 
-            self.logger.debug(
-                f'logvisgen start mp: {time.time() - temp_st:.3f}s')  # DEBUG
-            temp_st = time.time()  # DEBUG
-            
             # Since we cannot log the usual way (i.e. can't call wandb methods in a separate
             # process), now asynchronously ensure that we are clearing log buffers once in a while.
             # Otherwise, we would have to rely on other modalities in subsequent iterations, or end
@@ -309,9 +322,6 @@ class Logger:
                 if self.initialized:
                     self._handle_buffer_dicts(online_name, accumulate_online, step)
             
-            # self.logger.debug(
-            #     f'logvisgen handle buffers: {time.time() - temp_st:.3f}s')  # DEBUG
-
             return
 
         # Duplicate last frame three times for better visibility.
@@ -365,7 +375,7 @@ class Logger:
                 self.debug('save_video: wandb not initialized')
 
     def save_gallery(self, frames, step=None, file_name=None, online_name=None, caption=None,
-                     upscale_factor=1, accumulate_online=6):
+                     upscale_factor=1, accumulate_online=6, apply_async=False, defer_log=False):
         '''
         Records a single set of frames as a gallery image to a file in visuals and/or the online
         dashboard.
@@ -392,7 +402,8 @@ class Logger:
 
         self.save_image(gallery, step=step, file_name=file_name, online_name=online_name,
                         caption=caption, upscale_factor=upscale_factor,
-                        accumulate_online=accumulate_online)
+                        accumulate_online=accumulate_online, apply_async=apply_async,
+                        defer_log=defer_log)
 
     def save_3d(self, object_3d, step=None, online_name=None, caption=None):
         '''

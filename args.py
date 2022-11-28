@@ -117,10 +117,10 @@ def train_args():
     # General data options.
     parser.add_argument('--num_frames', default=24, type=int,
                         help='Video clip length.')
-    parser.add_argument('--frame_height', default=240, type=int,
-                        help='Post-processed image vertical size.')
-    parser.add_argument('--frame_width', default=320, type=int,
-                        help='Post-processed image horizontal size.')
+    parser.add_argument('--image_height', default=224, type=int,
+                        help='Vertical size of any entire post-processed image.')
+    parser.add_argument('--image_width', default=288, type=int,
+                        help='Horizontal size of any entire post-processed image.')
 
     # Model / architecture options.
     # ...
@@ -221,7 +221,7 @@ def verify_args(args, is_train=False):
             os.makedirs(args.checkpoint_path, exist_ok=True)
             os.makedirs(args.train_log_path, exist_ok=True)
 
-        if args.resume != '':
+            if args.resume != '':
                 # Train example: --resume v3 --name dbg4.
                 # NOTE: In this case, we wish to bootstrap another already trained model, yet resume
                 # in our own new logs folder! The rest is handled by train.py.

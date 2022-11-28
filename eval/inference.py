@@ -89,7 +89,7 @@ def perform_inference(data_retval, networks, device, logger, all_args, cur_step)
         data_retval, model_retval, loss_retval, cur_step, cur_step, 0, 1.0) \
             if loss_retval is not None else None
 
-    # Organize and return relevant info, moving stuff to CPU and/or converting to numpy as needed.
+    # Organize and return relevant info, converting results to numpy as needed.
     inference_retval = dict()
     inference_retval['model_retval'] = model_retval
     inference_retval['loss_retval'] = loss_retval

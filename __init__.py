@@ -18,6 +18,7 @@ import os
 import pathlib
 import pickle
 import platform
+import pytorch3d
 import random
 import scipy
 import seaborn as sns
@@ -43,7 +44,7 @@ import warnings
 from collections import defaultdict
 from einops import rearrange, repeat
 
-PROJECT_NAME = 'my-project-template'
+PROJECT_NAME = 'my-pt-template'
 
 sys.path.append(os.getcwd())
 sys.path.append(os.path.join(os.getcwd(), 'data/'))
