@@ -1,5 +1,6 @@
 '''
 Handling of parameters that can be passed to training and testing scripts.
+Created by Basile Van Hoorick.
 '''
 
 from __init__ import *
@@ -33,7 +34,7 @@ def shared_args(parser):
     '''
 
     # Misc options.
-    parser.add_argument('--seed', default=2023, type=int,
+    parser.add_argument('--seed', default=2025, type=int,
                         help='Random number generator seed.')
     parser.add_argument('--log_level', default='info', type=str,
                         choices=['debug', 'info', 'warn'],
@@ -62,13 +63,15 @@ def shared_args(parser):
     parser.add_argument('--epoch', default=-1, type=int,
                         help='If >= 0, desired model epoch to evaluate or resume from (0-based), '
                         'otherwise pick latest.')
-    parser.add_argument('--avoid_wandb', default=0, type=int,
-                        help='If 1, do not log videos online. If 2, do not log anything online.')
+    parser.add_argument('--avoid_wandb', default=1, type=int,
+                        help='If 1, rarely log visuals online. '
+                        'If 2, do not log visuals online. '
+                        'If 3, do not log anything online.')
     parser.add_argument('--log_rarely', default=0, type=int,
-                        help='If 1, create videos rarely.')
+                        help='If 1, rarely create and store visuals.')
                         
     # Data options (all phases).
-    parser.add_argument('--data_path', required=True, type=str, nargs='+',
+    parser.add_argument('--data_path', default=[''], type=str, nargs='+',
                         help='Path to dataset root folder(s).')
     parser.add_argument('--fake_data', default=False, type=_str2bool,
                         help='To quickly test GPU memory (VRAM) usage.')
@@ -102,7 +105,7 @@ def train_args():
                         help='Number of epochs to train for.')
     parser.add_argument('--checkpoint_every', default=5, type=int,
                         help='Store permanent model checkpoint every this number of epochs.')
-    parser.add_argument('--learn_rate', default=5e-4, type=float,
+    parser.add_argument('--learn_rate', default=2e-4, type=float,
                         help='Initial learning rate.')
     parser.add_argument('--lr_decay', default=0.3, type=float,
                         help='Learning rate factor per step for scheduler.')
@@ -153,14 +156,17 @@ def test_args():
     # Resource options.
     parser.add_argument('--gpu_id', default=0, type=int,
                         help='GPU index.')
+    parser.add_argument('--num_batches', default=0, type=int,
+                        help='If > 0, cut off script after this number of iterations, regardless '
+                        'of dataset size or fraction, per given data path.')
 
     # Inference & processing options.
     parser.add_argument('--store_results', default=False, type=_str2bool,
                         help='In addition to generating lossy 2D visuals, save all inputs & '
                         'outputs to disk for later processing, visualizations, metrics, or other '
                         'deep dives.')
-    parser.add_argument('--extra_visuals', default=False, type=_str2bool)
-    parser.add_argument('--for_stats', default=False, type=_str2bool)
+    parser.add_argument('--extra_visuals', default=0, type=int,
+                        help='If > 0, generate and store extra visualizations.')
 
     # Automatically inferred options (do not assign).
     parser.add_argument('--test_log_path', default='', type=str,
@@ -178,13 +184,6 @@ def verify_args(args, is_train=False):
 
     args.wandb_group = ('train' if is_train else 'test') + \
         ('_debug' if args.is_debug else '')
-
-    if is_train:
-        pass
-
-    else:
-        # Not supporting batches at test time simplifies things.
-        args.batch_size = 1
 
     if args.num_workers < 0:
         if is_train:

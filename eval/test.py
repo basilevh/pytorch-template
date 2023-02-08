@@ -1,5 +1,6 @@
 '''
 Evaluation logic.
+Created by Basile Van Hoorick.
 '''
 
 import os
@@ -58,6 +59,9 @@ def _test_inner(all_args, networks, data_loader, device, logger, step_offset):
         # Save some information to be aggregated across the entire test set.
         inference_retval = my_utils.dict_to_cpu(inference_retval)
         inference_retvals.append(inference_retval)
+
+        if all_args['test'].num_batches > 0 and cur_step >= all_args['test'].num_batches - 1:
+            break
 
     return inference_retvals
 
@@ -127,6 +131,9 @@ def _test_postprocess(inference_retvals, logger):
     if inference_retvals[0]['loss_retval'] is not None:
 
         metrics_retvals = [x['loss_retval']['metrics'] for x in inference_retvals]
+        if len(metrics_retvals[0]) == 0:
+            logger.info('No metrics to report.')
+            return
 
         final_weighted_metrics = metrics.calculate_weighted_averages(metrics_retvals)
         final_unweighted_metrics = metrics.calculate_unweighted_averages(metrics_retvals)
@@ -185,9 +192,9 @@ def main(test_args, logger):
 
     logger.info(f'Took {time.time() - start_time:.3f}s')
 
-    if test_args.avoid_wandb < 2:
+    if test_args.avoid_wandb < 3:
         logger.init_wandb(PROJECT_NAME, test_args, networks.values(), name=test_args.name,
-                        group=test_args.wandb_group)
+                          group=test_args.wandb_group)
 
     # Print test arguments.
     logger.info('Train command args: ' + str(train_args))

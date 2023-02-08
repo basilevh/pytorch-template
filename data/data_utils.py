@@ -1,14 +1,39 @@
 '''
 Data-related utilities and helper methods.
+Created by Basile Van Hoorick.
 '''
 
 from __init__ import *
 
 # Library imports.
 import glob
+import joblib
 
 # Internal imports.
 import my_utils
+
+cache = joblib.Memory('cache/', verbose=1)
+
+
+@cache.cache
+def recursive_listdir(src_dp, extensions=['jpg', 'jpeg', 'png']):
+    '''
+    :param src_dp (str).
+    :param extensions (list of str).
+    :return src_fps (list of str).
+    '''
+    src_fps = []
+    
+    # Get all full file paths with specified extensions.
+    for ext in extensions:
+        src_fps += glob.glob(os.path.join(src_dp, '**/*.' + ext.lower()), recursive=True)
+        src_fps += glob.glob(os.path.join(src_dp, '**/*.' + ext.upper()), recursive=True)
+    src_fps = sorted(src_fps)
+
+    # Exclude probably invalid temporary file names starting with a dot.
+    src_fps = [fp for fp in src_fps if not(fp.split('/')[-1].startswith('.'))]
+
+    return src_fps
 
 
 def read_video_audio_clip(video_fp, audio_fp, sel_num_frames=16, sel_start_time=None,
@@ -159,75 +184,23 @@ def read_all_images(src_dp, exclude_patterns=None, count_only=False, use_tqdm=Fa
     frames = []
     if use_tqdm:
         src_fps = tqdm.tqdm(src_fps)
-    
+
     for fp in src_fps:
         frame = plt.imread(fp)[..., 0:3]
         frame = (frame / 255.0).astype(np.float32)
-        
+
         if early_resize_height is not None and early_resize_height > 0:
             (H1, W1) = frame.shape[:2]
             if H1 > early_resize_height:
                 (H2, W2) = (early_resize_height, int(round(early_resize_height * W1 / H1)))
                 frame = cv2.resize(frame, (W2, H2), interpolation=cv2.INTER_LINEAR)
-        
+
         frames.append(frame)
 
     if stack:  # Otherwise, remain list for efficiency.
         frames = np.stack(frames)
-    
+
     return frames
-
-
-def cached_listdir(dir_path, allow_exts=[], recursive=False, force_live=False):
-    '''
-    Returns a list of all file paths if needed, and caches the result for efficiency.
-    NOTE: Manual deletion of listdir.p is required if the directory ever changes.
-    :param dir_path (str): Folder to gather file paths within.
-    :param allow_exts (list of str): Only retain files matching these extensions.
-    :param recursive (bool): Also include contents of all subdirectories within.
-    :param force_live (bool): Same behavior but don't read or write any cache.
-    :return (list of str): List of full image file paths.
-    '''
-    exts_str = '_'.join(allow_exts)
-    recursive_str = 'rec' if recursive else ''
-    cache_fp = f'{str(pathlib.Path(dir_path))}_{exts_str}_{recursive_str}_cld.p'
-
-    if os.path.exists(cache_fp) and not(force_live):
-        # Cached result already available.
-        print('Loading directory contents from ' + cache_fp + '...')
-        with open(cache_fp, 'rb') as f:
-            result = pickle.load(f)
-
-    else:
-        # No cached result available yet. This call can sometimes be very expensive.
-        raw_listdir = os.listdir(dir_path)
-        result = copy.deepcopy(raw_listdir)
-
-        # Append root directory to get full paths.
-        result = [os.path.join(dir_path, fn) for fn in result]
-        
-        # Filter by files only (no folders), not being own cache dump,
-        # belonging to allowed file extensions, and not starting with a dot.
-        result = [fp for fp in result if os.path.isfile(fp)]
-        result = [fp for fp in result if not fp.endswith('_cld.p')]
-        if allow_exts is not None and len(allow_exts) != 0:
-            result = [fp for fp in result
-                      if any([fp.lower().endswith('.' + ext) for ext in allow_exts])
-                      and fp[0] != '.']
-
-        # Recursively append contents of subdirectories within.
-        if recursive:
-            for dn in raw_listdir:
-                dp = os.path.join(dir_path, dn)
-                if os.path.isdir(dp):
-                    result += cached_listdir(dp, allow_exts=allow_exts, recursive=True)
-                  
-        if not(force_live):
-            print('Caching filtered directory contents to ' + cache_fp + '...')
-            with open(cache_fp, 'wb') as f:
-                pickle.dump(result, f)
-    
-    return result
 
 
 def read_image_robust(img_path, no_fail=False):
@@ -238,14 +211,14 @@ def read_image_robust(img_path, no_fail=False):
     try:
         image = plt.imread(img_path).copy()  # (H, W) or (H, W, 3) array of uint8.
         success = True
-        
+
         if image.ndim == 2:
             image = np.stack([image] * 3, axis=-1)
         elif image.shape[2] == 1:
             image = np.stack([image[..., 0]] * 3, axis=-1)
         elif image.shape[2] == 4:
             image = image[..., 0:3]
-        
+
         if (image.ndim != 3 or image.shape[2] != 3
                 or np.any(np.array(image.strides) < 0)):
             # Either not RGB or has negative stride, so discard.
@@ -330,8 +303,42 @@ def clean_remain_reproducible(data_retval):
         data_retval can be huge.
     '''
     data_retval_pruned = my_utils.dict_to_cpu(
-        data_retval, ignore_keys=['pv_rgb_tf', 'pv_depth_tf', 'pv_segm_tf', 'pv_coords_tf',
-                                  'pv_xyz_tf', 'pv_div_segm_tf', 'pv_query_tf', 'pv_target_tf'])
+        data_retval, ignore_keys=['todo'])
 
     return data_retval_pruned
 
+
+def _paths_from_txt(txt_fp):
+    # First, simply obtain all non-empty, non-commented lines.
+    with open(txt_fp, 'r') as f:
+        lines = f.readlines()
+    lines = [line.strip() for line in lines]
+    lines = [line for line in lines if len(line) > 0]
+    lines = [line for line in lines if not(line.lower().startswith('#'))]
+    
+    # Then, prepend non-existent (presumed relative) paths with the directory of the text file.
+    # This allows for sharing text files across machines without having to modify the contents.
+    txt_dp = str(pathlib.Path(txt_fp).parent)
+    paths = []
+    for line in lines:
+        if os.path.exists(line):
+            paths.append(line)
+        else:
+            absolute_path = os.path.join(txt_dp, line)
+            assert os.path.exists(absolute_path), absolute_path
+            paths.append(absolute_path)
+    
+    return paths
+
+
+def get_data_paths_from_args(given_data_paths):
+    '''
+    Converts any text file into the the list of actual paths it contains as lines within.
+    '''
+    actual_data_paths = []
+    for data_path in given_data_paths:
+        if data_path.lower().endswith('.txt'):
+            actual_data_paths += _paths_from_txt(data_path)
+        else:
+            actual_data_paths.append(data_path)
+    return actual_data_paths

@@ -2,17 +2,21 @@
     "version": "0.2.0",
     "configurations": [
         {
+            // use conda env = p39h
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
+            "justMyCode": true,
             "env": {
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                "DISPLAY": "localhost:11.0",
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "5",
             },
         },
         {
-            "name": "train_dbg",
+            // use conda env = p39h
+            "name": "train",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/train.py",
@@ -21,7 +25,7 @@
             "justMyCode": true,
             "env": {
                 "CUDA_VISIBLE_DEVICES": "1",
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "5",
             },
             "args": [
                 "--name",
@@ -36,7 +40,8 @@
             ],
         },
         {
-            "name": "test_dbg",
+            // use conda env = p39h
+            "name": "test",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/test.py",
@@ -44,7 +49,7 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "env": {
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "5",
             },
             "args": [
                 "--resume",

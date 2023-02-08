@@ -1,5 +1,6 @@
 '''
 Evaluation tools.
+Created by Basile Van Hoorick.
 '''
 
 import os
@@ -27,8 +28,7 @@ def load_networks(checkpoint_path, device, logger, epoch=-1):
         epoch (int).
     '''
     print_fn = logger.info if logger is not None else print
-    
-    # TODO DRY: This overlaps with args.py, and the passed value is always a file.
+
     assert os.path.exists(checkpoint_path)
     if os.path.isdir(checkpoint_path):
         model_fn = f'model_{epoch}.pth' if epoch >= 0 else 'checkpoint.pth'
@@ -48,6 +48,7 @@ def load_networks(checkpoint_path, device, logger, epoch=-1):
     model_args = {'backbone': backbone_args}
 
     # Instantiate networks.
+    # NOTE: This part mostly mirrors main() in train.py.
     networks = dict()
     backbone_net = model.MyModel(logger, **backbone_args)
     backbone_net = backbone_net.to(device)
@@ -66,9 +67,14 @@ def perform_inference(data_retval, networks, device, logger, all_args, cur_step)
     :param data_retval (dict): Data loader element.
     :param all_args (dict): train, test, train_dset, test_dset, model.
     '''
+    within_batch_inds = data_retval['within_batch_idx']
+    B = within_batch_inds.shape[0]
+
+    temp_st = time.time()  # DEBUG
+
     # Following DRY, prepare pipeline instance, *BUT* take care of shared args by updating them.
     used_args = copy.deepcopy(all_args['train'])
-    
+
     my_pipeline = pipeline.MyTrainPipeline(used_args, logger, networks, device)
     my_pipeline.set_phase('test')  # This calls eval() on all submodules.
 
@@ -76,10 +82,7 @@ def perform_inference(data_retval, networks, device, logger, all_args, cur_step)
     metrics_only = True
     no_pred = all_args['test'].for_stats
 
-    # Communicate arguments from test options to modules.
-    # ...
 
-    temp_st = time.time()  # DEBUG
     (model_retval, loss_retval) = my_pipeline(
         data_retval, cur_step, cur_step, 0, 1.0, include_loss, metrics_only, no_pred)
     logger.debug(f'(perform_inference) my_pipeline: {time.time() - temp_st:.3f}s')  # DEBUG
@@ -94,5 +97,7 @@ def perform_inference(data_retval, networks, device, logger, all_args, cur_step)
     inference_retval['model_retval'] = model_retval
     inference_retval['loss_retval'] = loss_retval
     inference_retval = my_utils.dict_to_cpu(inference_retval)
+
+    logger.debug(f'perform_inference: {time.time() - temp_st:.3f}s')  # DEBUG
 
     return inference_retval

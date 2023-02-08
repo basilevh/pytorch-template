@@ -1,5 +1,6 @@
 '''
 Manages training & validation.
+Created by Basile Van Hoorick.
 '''
 
 from __init__ import *
@@ -41,13 +42,14 @@ def _train_one_epoch(args, train_pipeline, networks_nodp, phase, epoch, optimize
         logger.info(f'===> Validation ({phase})')
 
     train_pipeline[1].set_phase(phase)
+    short_desc = f'[{phase[0].upper()} {epoch + 1} / {args.num_epochs}]'
 
     steps_per_epoch = len(data_loader)
     total_step_base = steps_per_epoch * epoch  # This has already happened so far.
     start_time = time.time()
     num_exceptions = 0
 
-    for cur_step, data_retval in enumerate(tqdm.tqdm(data_loader)):
+    for cur_step, data_retval in enumerate(tqdm.rich.tqdm(data_loader, desc=short_desc)):
 
         if cur_step == 0:
             logger.info(f'Enter first data loader iteration took {time.time() - start_time:.3f}s')
@@ -57,44 +59,59 @@ def _train_one_epoch(args, train_pipeline, networks_nodp, phase, epoch, optimize
 
         data_retval['within_batch_idx'] = torch.arange(args.batch_size)  # (B).
 
-        # Don't catch exceptions when debugging.
-        if args.is_debug:
-
+        def _train_step():
+            # First, address every example independently.
+            # This part has zero interaction between any pair of GPUs.
             if not args.data_loop_only:
                 (model_retval, loss_retval) = train_pipeline[0](
                     data_retval, cur_step, total_step, epoch, progress, True, False, False)
+
+                # Second, process accumulated information, for example contrastive loss
+                # functionality. This part typically happens on the first GPU, so it should be
+                # kept minimal in memory.
                 loss_retval = train_pipeline[1].process_entire_batch(
                     data_retval, model_retval, loss_retval, cur_step, total_step, epoch,
                     progress)
+
             else:
                 (model_retval, loss_retval) = (None, None)
+
+            # Print and visualize stuff.
             logger.handle_train_step(epoch, phase, cur_step, total_step, steps_per_epoch,
-                                     data_retval, model_retval, loss_retval, args, None)
+                                     data_retval, model_retval, loss_retval, args, None, 0)
+
+            # Perform backpropagation to update model parameters.
+            if phase == 'train' and not args.data_loop_only:
+
+                optimizers['backbone'].zero_grad()
+
+                if torch.isnan(loss_retval['total']):
+                    logger.warning('Skipping backbone optimizer step due to loss = NaN.')
+
+                elif not(loss_retval['total'].requires_grad):
+                    logger.warning('Skipping backbone optimizer step due to requires_grad = False.')
+
+                else:
+                    loss_retval['total'].backward()
+
+                    # Apply gradient clipping if desired.
+                    if args.gradient_clip > 0.0:
+                        torch.nn.utils.clip_grad_norm_(networks_nodp['backbone'].parameters(),
+                                                       args.gradient_clip)
+
+                    optimizers['backbone'].step()
+
+        # Don't catch exceptions when debugging.
+        if args.is_debug:
+
+            _train_step()
 
         else:
             try:
-                # First, address every example independently.
-                # This part has zero interaction between any pair of GPUs.
-                if not args.data_loop_only:
-                    (model_retval, loss_retval) = train_pipeline[0](
-                        data_retval, cur_step, total_step, epoch, progress, True, False, False)
 
-                    # Second, process accumulated information, for example contrastive loss
-                    # functionality. This part typically happens on the first GPU, so it should be
-                    # kept minimal in memory.
-                    loss_retval = train_pipeline[1].process_entire_batch(
-                        data_retval, model_retval, loss_retval, cur_step, total_step, epoch,
-                        progress)
-
-                else:
-                    (model_retval, loss_retval) = (None, None)
-
-                # Print and visualize stuff.
-                logger.handle_train_step(epoch, phase, cur_step, total_step, steps_per_epoch,
-                                         data_retval, model_retval, loss_retval, args, None)
+                _train_step()
 
             except Exception as e:
-
                 num_exceptions += 1
                 if num_exceptions >= 20:
                     raise e
@@ -102,28 +119,7 @@ def _train_one_epoch(args, train_pipeline, networks_nodp, phase, epoch, optimize
                     logger.exception(e)
                     continue
 
-        # Perform backpropagation to update model parameters.
-        if phase == 'train' and not args.data_loop_only:
-
-            optimizers['backbone'].zero_grad()
-
-            if torch.isnan(loss_retval['total']):
-                logger.warning('Skipping backbone optimizer step due to loss = NaN.')
-
-            elif not(loss_retval['total'].requires_grad):
-                logger.warning('Skipping backbone optimizer step due to requires_grad = False.')
-
-            else:
-                loss_retval['total'].backward()
-
-                # Apply gradient clipping if desired.
-                if args.gradient_clip > 0.0:
-                    torch.nn.utils.clip_grad_norm_(networks_nodp['backbone'].parameters(),
-                                                   args.gradient_clip)
-
-                optimizers['backbone'].step()
-
-        if cur_step >= 512 and args.is_debug:
+        if cur_step >= 500 and args.is_debug:
             logger.warning('Cutting epoch short for debugging...')
             break
 
@@ -310,7 +306,7 @@ def main(args, logger):
             logger.info(f'Took {time.time() - start_time:.3f}s')
             logger.info()
 
-    if args.avoid_wandb < 2:
+    if args.avoid_wandb < 3:
         logger.init_wandb(PROJECT_NAME, args, networks.values(), name=args.name + '_',
                         group=args.wandb_group)
 

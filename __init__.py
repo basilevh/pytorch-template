@@ -1,5 +1,6 @@
 '''
 These imports are shared across all files.
+Created by Basile Van Hoorick.
 '''
 
 # Library imports.
@@ -8,8 +9,15 @@ import collections
 import collections.abc
 import copy
 import cv2
+import glob
 import imageio
+import imgcat
 import itertools
+import io
+import joblib
+import json
+import lovely_numpy
+import lovely_tensors
 import matplotlib.colors
 import matplotlib.pyplot as plt
 import multiprocessing as mp
@@ -19,6 +27,10 @@ import pathlib
 import pickle
 import platform
 import random
+import rich
+import rich.console
+import rich.logging
+import rich.progress
 import scipy
 import seaborn as sns
 import shutil
@@ -39,9 +51,12 @@ import torchvision.models
 import torchvision.transforms
 import torchvision.utils
 import tqdm
+import tqdm.rich
 import warnings
 from collections import defaultdict
 from einops import rearrange, repeat
+from lovely_numpy import lo
+from rich import print
 
 PROJECT_NAME = 'my-pt-template'
 
@@ -51,6 +66,8 @@ sys.path.append(os.path.join(os.getcwd(), 'eval/'))
 sys.path.append(os.path.join(os.getcwd(), 'model/'))
 sys.path.append(os.path.join(os.getcwd(), 'third_party/'))
 sys.path.append(os.path.join(os.getcwd(), 'utils/'))
+
+lovely_tensors.monkey_patch()
 
 
 # Quick functions for usage during debugging:

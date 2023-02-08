@@ -1,5 +1,6 @@
 '''
 Objective functions.
+Created by Basile Van Hoorick.
 '''
 
 from __init__ import *

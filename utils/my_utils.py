@@ -1,6 +1,12 @@
 '''
 Miscellaneous tools / utilities / helper methods.
+Created by Basile Van Hoorick.
 '''
+
+import os
+import sys
+sys.path.insert(0, os.path.join(os.getcwd(), 'utils/'))
+sys.path.insert(0, os.getcwd())
 
 from __init__ import *
 
@@ -42,7 +48,7 @@ def dict_to_cpu(x, ignore_keys=[]):
         return x.detach().cpu()
     elif isinstance(x, dict):
         return {k: dict_to_cpu(v, ignore_keys=ignore_keys) for (k, v) in x.items()
-        if not(k in ignore_keys)}
+                if not(k in ignore_keys)}
     elif isinstance(x, list):
         return [dict_to_cpu(v, ignore_keys=ignore_keys) for v in x]
     else:
@@ -116,41 +122,6 @@ def elitist_shuffle(items, inequality):
     return np.random.choice(items, size=len(items), replace=False, p=weights)
 
 
-def quick_pca(array, k=3, unique_features=False, normalize=None):
-    '''
-    array (*, n): Array to perform PCA on.
-    k (int) < n: Number of components to keep.
-    '''
-    n = array.shape[-1]
-    all_axes_except_last = tuple(range(len(array.shape) - 1))
-    array_flat = array.reshape(-1, n)
-
-    pca = sklearn.decomposition.PCA(n_components=k)
-    
-    if unique_features:
-        # Obtain unique combinations of occluding instance sequences, to avoid bias toward larger
-        # object masks.
-        unique_combinations = np.unique(array_flat, axis=0)
-        pca.fit(unique_combinations)
-    
-    else:
-        pca.fit(array_flat)
-    
-    result_unnorm = pca.transform(array_flat).reshape(*array.shape[:-1], k)
-    
-    if normalize is not None:
-        per_channel_min = result_unnorm.min(axis=all_axes_except_last, keepdims=True)
-        per_channel_max = result_unnorm.max(axis=all_axes_except_last, keepdims=True)
-        result = (result_unnorm - per_channel_min) / (per_channel_max - per_channel_min)
-        result = result * (normalize[1] - normalize[0]) + normalize[0]
-
-    else:
-        result = result_unnorm
-    
-    result = result.astype(np.float32)
-    return result
-
-
 def ax_to_numpy(ax, dpi=160):
     fig = ax.figure
     with io.BytesIO() as buff:
@@ -186,7 +157,7 @@ def disk_cached_call(logger, cache_fp, newer_than, func, *args, **kwargs):
 
     else:
         result = func(*args, **kwargs)
-        
+
         if cache_fp is not None:
             cache_dp = str(pathlib.Path(cache_fp).parent)
             os.makedirs(cache_dp, exist_ok=True)
@@ -204,6 +175,25 @@ def read_txt_strip_comments(txt_fp):
     lines = [x.strip() for x in lines]
     lines = [x for x in lines if len(x) > 0]
     return lines
+
+
+def fig_to_numpy(fig, close=True):
+    # https://stackoverflow.com/questions/7821518/matplotlib-save-plot-to-numpy-array
+    with io.BytesIO() as buff:
+        fig.savefig(buff, format='raw')
+        buff.seek(0)
+        data = np.frombuffer(buff.getvalue(), dtype=np.uint8)
+
+    w, h = fig.canvas.get_width_height()
+    im = data.reshape((int(h), int(w), -1))[..., 0:3]
+
+    if close:
+        plt.close(fig)
+        plt.close()
+        plt.cla()
+        plt.clf()
+
+    return im
 
 
 if __name__ == '__main__':

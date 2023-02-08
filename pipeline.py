@@ -1,5 +1,6 @@
 '''
 Entire training pipeline logic.
+Created by Basile Van Hoorick.
 '''
 
 from __init__ import *
@@ -61,7 +62,6 @@ class MyTrainPipeline(torch.nn.Module):
             model_retval (dict): All output information.
             loss_retval (dict): Preliminary loss information (per-example, but not batch-wide).
         '''
-
         within_batch_inds = data_retval['within_batch_idx']
         B = within_batch_inds.shape[0]
 

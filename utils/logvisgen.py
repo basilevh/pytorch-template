@@ -1,9 +1,14 @@
 '''
 Logging and visualization logic.
+Created by Basile Van Hoorick.
 '''
 
-from __init__ import *
+import os
+import sys
+sys.path.insert(0, os.path.join(os.getcwd(), 'utils/'))
+sys.path.insert(0, os.getcwd())
 
+from __init__ import *
 
 # Library imports.
 import imageio
@@ -11,6 +16,7 @@ import json
 import logging
 import os
 import wandb
+from rich.logging import RichHandler
 
 
 def _save_image_wrapper(logger, *args, **kwargs):
@@ -46,7 +52,7 @@ class Logger:
         self.context = context
         self.msg_prefix = PROJECT_NAME if msg_prefix is None else msg_prefix
         use_file_io = (log_dir is not None and context is not None)
-        
+
         if use_file_io:
             self.log_path = os.path.join(self.log_dir, context + '.log')
             self.aud_dir = os.path.join(self.log_dir, 'audio')
@@ -61,19 +67,26 @@ class Logger:
             # os.makedirs(self.txt_dir, exist_ok=True)
             os.makedirs(self.vis_dir, exist_ok=True)
 
-        # Create console and optional file output handler.
+        # Create rich console and optional file output handler.
         handlers = []
-        if use_file_io:
-            handlers.append(logging.FileHandler(self.log_path))
-        my_handler = logging.StreamHandler()
+        my_handler = rich.logging.RichHandler(
+            rich_tracebacks=True, show_time=True, markup=False, show_level=True, show_path=False,
+            log_time_format='[%X]', omit_repeated_times=False)
         my_handler.addFilter(MyFilter())  # For console only, not file.
+        my_handler.setFormatter(logging.Formatter("%(message)s"))
         handlers.append(my_handler)
+
+        if use_file_io:
+            file_handler = logging.FileHandler(self.log_path)
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s : %(levelname)s : %(name)s : %(message)s'))
+            handlers.append(file_handler)
 
         # Configure root & project logger.
         if log_level is None:
             log_level = logging.INFO
         logging.basicConfig(
-            level=log_level, format="%(asctime)s : %(levelname)s : %(name)s : %(message)s",
+            level=log_level,
             handlers=handlers)
         self.logger = logging.getLogger(self.msg_prefix)
         self.debug(f'log_level: {log_level}')
@@ -119,16 +132,16 @@ class Logger:
         if name is None:
             name = args.name
         wandb_kwargs = dict(project=project, group=group, config=args, name=name)
-        
+
         # https://docs.wandb.ai/guides/track/launch#init-start-error
         wandb.init(**wandb_kwargs, settings=wandb.Settings(start_method='fork'))
-        
+
         if not isinstance(networks, collections.abc.Iterable):
             networks = [networks]
         for net in networks:
             if net is not None:
                 wandb.watch(net)
-        
+
         self.initialized = True
 
     def debug(self, *args):
@@ -246,9 +259,9 @@ class Logger:
             if online_name is not None and self.initialized:
                 if self.initialized:
                     self._handle_buffer_dicts(online_name, accumulate_online, step)
-            
+
             return
-        
+
         if image.dtype in [np.float32, np.float64]:
             image = (image * 255.0).astype(np.uint8)
 
@@ -323,7 +336,7 @@ class Logger:
             if online_name is not None and self.initialized:
                 if self.initialized:
                     self._handle_buffer_dicts(online_name, accumulate_online, step)
-            
+
             return
 
         # Duplicate last frame three times for better visibility.
